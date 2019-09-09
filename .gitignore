@@ -2,4 +2,6 @@
 client
 server
 server(beej).c
+abcd
+*.sh
 
