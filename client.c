@@ -57,6 +57,8 @@ int main(int argc, char *argv[])
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
+        uint32_t en= 0x12345678;
+    printf("%#x  |  %#x\n",en,htonl(en));
     
     printf("HOST : %s    PORT : %s\n",host,port);
 
@@ -105,15 +107,24 @@ int main(int argc, char *argv[])
     memcpy(buffer+8,&myheader->length,sizeof(unsigned long long));
     // memcpy(buffer+16,buffertemp,strlen(buffertemp));
     strcpy(buffer+16,buffertemp);
-    printf("buffertemp : %s\n",buffertemp);
+    printf("buffer : %s\n",buffertemp);
+    unsigned char* cursor = buffer;
+    
+    for(int z=0;z<16;z++) {
+        printf("%02x ",*cursor);
+        if(z%4==3)
+            printf(" | ");
+        ++cursor;
 
-    printf("myheader %x\n",buffer[0]);
-    printf("myheader %x\n",buffer[1]);
-    printf("myheader %x\n",buffer[2]);
-    printf("myheader %c\n",buffer[16]);
-    printf("myheader %c\n",buffer[17]);
-    printf("myheader %c\n",buffer[18]);
-    printf("%lu = length | %s\n",strlen(buffer),buffer);
+    }
+    
+    // printf("myheader %x\n",buffer[0]);
+    // printf("myheader %x\n",buffer[1]);
+    // printf("myheader %x\n",buffer[2]);
+    // printf("myheader %c\n",buffer[16]);
+    // printf("myheader %c\n",buffer[17]);
+    // printf("myheader %c\n",buffer[18]);
+    // printf("%lu = length | %s\n",strlen(buffer),buffer);
     send(socket_fd,buffer,strlen(buffer),0);
     // send(socket_fd,argv[1],strlen(argv[1]),0);
 
@@ -123,6 +134,7 @@ int main(int argc, char *argv[])
     }
 
     buf[numbytes] = '\0';
+
 
     printf("client: received '%s'\n",buf);
 
