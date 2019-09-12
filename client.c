@@ -11,6 +11,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <endian.h>
 
 #define PORT "3490"
 #define BACKLOG 5
@@ -28,10 +29,13 @@ struct header {
 
 void calculate_checksum(unsigned short* a, unsigned short b) {
     unsigned short current = *a;
+    printf("%02x and %02x,",current,b);
     if (current + b > 65536)
         *a = current + b - 65535;
     else
         *a = current + b;
+    
+    printf("Current checksum : %02x\n",*a);
 }
 
 int main(int argc, char *argv[]) {
@@ -56,9 +60,9 @@ int main(int argc, char *argv[]) {
   myheader->checksum = 0;
   calculate_checksum(&myheader->checksum,myheader->op);
   calculate_checksum(&myheader->checksum,
-      (unsigned short)(myheader->keyword[0])<<8 + (unsigned short)(myheader->keyword[1]));
+      (unsigned short)(myheader->keyword[0])*(unsigned short)(256) + (unsigned short)(myheader->keyword[1]));
   calculate_checksum(&myheader->checksum,
-      (unsigned short)(myheader->keyword[2])<<8 + (unsigned short)(myheader->keyword[3]));
+      (unsigned short)(myheader->keyword[2])*(unsigned short)(256) + (unsigned short)(myheader->keyword[3]));
 
 
 
@@ -72,10 +76,6 @@ int main(int argc, char *argv[]) {
   memset(&hints, 0, sizeof hints);
   hints.ai_family = AF_INET;
   hints.ai_socktype = SOCK_STREAM;
-  uint32_t en = 0x12345678;
-  printf("%#x  |  %#x\n", en, htonl(en));
-
-  printf("HOST : %s    PORT : %s\n", host, port);
 
   if (getaddrinfo(host, port, &hints, &servinfo) != 0) {
       perror("getaddrinfo");
@@ -120,28 +120,34 @@ int main(int argc, char *argv[]) {
   
 //   myheader->checksum = 0x1358;
   myheader->length += strlen(buffertemp) - 1;
-//   myheader->length = 0x12345678;
+//   myheader->length = 0x78;
   myheader->nworder_length = htonl((uint32_t)(myheader->length));
+  
 
   for (int c = 0 ; c < strlen(buffertemp)/2 ; c++ ) {
       calculate_checksum(&myheader->checksum,
-      (unsigned short)(buffertemp[2*c])<<8 + (unsigned short)(buffertemp[2*c+1]));
+      (unsigned short)(buffertemp[2*c])*(unsigned short)(256) + (unsigned short)(buffertemp[2*c+1]));
   }
-  if (strlen(buffertemp)%2)
+  printf("strlen %d   nworder %x\n",strlen(buffertemp),myheader->length);
+  if (strlen(buffertemp)%2==0)
       calculate_checksum(&myheader->checksum, (unsigned short)(buffertemp[strlen(buffertemp)-2]));
       
-
+  calculate_checksum(&myheader->checksum,(unsigned short)(myheader->length%65536));
   myheader->checksum = ~(myheader->checksum);
+  myheader->checksum = htons(myheader->checksum);
   // printf("%x   |   %x\n",myheader->length,myheader->nworder_length);
 
   // printf("***Start***\n%llu\n%llu\n%llu\n",myheader->length,myheader->length>>32,myheader->length>>32&0xffffffff);
   // printf("%x nworder \n",myheader->nworder_length);
+  myheader->length = htobe64(myheader->length);
   memset(buffer, 0, 1);
   memcpy(buffer + 1, &myheader->op, sizeof(char));
   memcpy(buffer + 2, &myheader->checksum, sizeof(myheader->checksum));
   memcpy(buffer + 4, &myheader->keyword, sizeof(char) * 4);
-  memset(buffer + 8, 0, 4);
-  memcpy(buffer + 12, &myheader->nworder_length, sizeof(uint32_t));
+//   memset(buffer + 8, 0, 4);
+//   memcpy(buffer + 12, &myheader->nworder_length, sizeof(uint32_t));
+  
+  memcpy(buffer + 8, &myheader->length, sizeof(unsigned long long));
   memcpy(buffer+16,buffertemp,strlen(buffertemp));
 //   strcpy(buffer + 16, buffertemp);
   printf("buffer : %s\n", buffertemp);
@@ -154,7 +160,8 @@ int main(int argc, char *argv[]) {
       ++cursor;
   }
   printf("\n");
-  send(socket_fd, buffer, strlen(buffertemp) + 15, 0);
+//   send(socket_fd, buffer, strlen(buffertemp) + 15, 0);
+  send(socket_fd, buffer, be64toh(myheader->length), 0);
 
   if ((numbytes = recv(socket_fd, buf, MAXDATASIZE - 1, 0)) == -1) {
       perror("recv");
@@ -164,7 +171,10 @@ int main(int argc, char *argv[]) {
   buf[numbytes] = '\0';
 
   printf("client: received '%s' with %d bytes\n", buf,numbytes);
-
+  for (int y=16; y<numbytes;y++) {
+      printf("%c",buf[y]);
+  }
+  printf("\n");
   close(socket_fd);
 
   free(host);
