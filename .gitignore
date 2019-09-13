@@ -4,4 +4,7 @@ server
 server(beej).c
 abcd
 *.sh
+*test
+aa
+love*
 
