@@ -7,4 +7,5 @@ abcd
 *test
 aa
 love*
-
+*.txt
+testvectors/test*
