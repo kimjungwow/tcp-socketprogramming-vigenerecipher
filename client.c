@@ -22,6 +22,19 @@ void calculate_checksum(unsigned short *a, unsigned short b) {
     *a = current + b;
 }
 
+void print_packet(unsigned char* buffer, int size) {
+  unsigned char* cursor = buffer;
+  
+  for(int z=0;z<size+HEADERSIZE;z++) {
+      printf("%02x ",*cursor);
+      if(z%4==3)
+          printf("| ");
+      ++cursor;
+  }
+  printf("\n");
+  
+}
+
 int main(int argc, char *argv[]) {
 
   char *host, *port;
@@ -100,13 +113,25 @@ int main(int argc, char *argv[]) {
     unsigned char *concatenated_stdin =
         (unsigned char *)malloc(MAXPACKETSIZE * sizeof(unsigned char));
     strcat(concatenated_stdin, buffer_stdin);
+    printf("%zu %zu \n",strlen(concatenated_stdin),strlen(buffer_stdin));
+    // for (int yy = 0; yy < strlen(buffer_stdin); yy++)
+    //     printf("%c", buffer_stdin[yy]);
     while (strlen(concatenated_stdin) + ONEMEGABYTE < MAXPACKETSIZE &&
            fgets(buffer_stdin, sizeof(buffer_stdin), stdin) != NULL) {
       strcat(concatenated_stdin, buffer_stdin);
+      printf("%zu %zu \n",strlen(concatenated_stdin),strlen(buffer_stdin));
+      for (int yy = 0; yy < strlen(buffer_stdin); yy++)
+        printf("%c", buffer_stdin[yy]);
+      printf("\n");
     }
+    printf("%zu %zu %zu\n",strlen(concatenated_stdin),ONEMEGABYTE,MAXPACKETSIZE);
     for (int b = 0; b < strlen(concatenated_stdin); b++) {
       concatenated_stdin[b] = tolower(concatenated_stdin[b]);
     }
+    // printf("HERE?2 == %zu\n",strlen(concatenated_stdin));
+    // print_packet(concatenated_stdin,strlen(concatenated_stdin));
+    // for (int yy = 0; yy < (int)(strlen(concatenated_stdin)); yy++)
+    //     printf("%c %d %d\n", concatenated_stdin[yy], yy, (int)(strlen(concatenated_stdin)));
 
     /// 2. Put stdin and header into packet
     unsigned char *packet_to_send =
@@ -141,6 +166,9 @@ int main(int argc, char *argv[]) {
 
     int readbytes = be64toh(myheader->length), tempreadbytes = readbytes;
     send(socket_fd, packet_to_send, readbytes, 0);
+    printf("Here3?\n");
+    
+
 
     while (readbytes > 0) {
       char *buf = (char *)malloc(MAXPACKETSIZE * sizeof(char));
@@ -159,6 +187,7 @@ int main(int argc, char *argv[]) {
 
       free(buf);
       readbytes -= (numbytes);
+    //   printf("%d %d\n",readbytes,numbytes);
     }
     free(concatenated_stdin);
     free(packet_to_send);
