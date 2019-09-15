@@ -84,27 +84,40 @@ int main(int argc, char *argv[]) {
       unsigned short checksum = (unsigned short)buf[2] * (unsigned short)(256) +
                                 (unsigned short)buf[3];
 
-      unsigned char keyword[4];
+      unsigned char keyword[5];
       strncpy(keyword, buf + 4, 4);
+      keyword[4]='\0';
       unsigned long long length = 0;
       for (int i = 15; i >= 8; i--) {
         length += (unsigned long long)buf[i] *
-                  (unsigned long long)(pow(16.0, (double)(15 - i)));
+                  (unsigned long long)(pow(256.0, (double)(15 - i)));
+        printf("%llu NOW %d BECAUSE %llu * %llu\n",length,i,(unsigned long long)buf[i],(unsigned long long)(pow(16.0, (double)(15 - i))));
       }
 
-      for (int j=0; j<4; j++) {
-          keyword[j] += keyword[j]-'a';
-      }
+      // for (int j=0; j<4; j++) {
+      //     keyword[j] += keyword[j]-'a';
+      // }
 
       printf("%d op | %02x checksum | %s keyword | %d numbytes | %llu length\n",
              op, checksum, keyword, numbytes, length);
 
       unsigned char* data = (unsigned char*)calloc(sizeof(unsigned char)*(length),1);
+      for (int m=16;m<length;m++) {
+        buf[m]=tolower(buf[m]);
+      }
+      int keyworditer=0;
       for (int k=16; k<length;k++) {
-          if (buf[k]+keyword[k%4]-'a'>'z')
-            data[k] = buf[k] + keyword[k%4] - 26 - 'a';
+        if(buf[k]>='a'&&buf[k]<='z') {
+          if (buf[k]+keyword[keyworditer%4]-'a'>'z')
+            data[k] = buf[k] + keyword[keyworditer%4] - 26 - 'a';
           else
-            data[k] = buf[k] + keyword[k%4] - 'a';
+            data[k] = buf[k] + keyword[keyworditer%4] - 'a';
+          keyworditer++;
+          
+        } else {
+          data[k] = buf[k];
+        }
+          
       }
       for (int t=0; t<16; t++) {
           data[t] = buf[t];

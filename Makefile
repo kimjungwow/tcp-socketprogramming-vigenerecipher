@@ -1,4 +1,4 @@
-all: client server test
+all: client server
 
 client: client.o
 	gcc -o client client.o -lm
