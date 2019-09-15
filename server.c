@@ -12,8 +12,7 @@
 #include <errno.h>
 #include <ctype.h>
 
-#define MAXDATASIZE 100 // max number of bytes we can get at once 
-#define PORT "3490"
+#define MAXDATASIZE 10*1024*1024 // max number of bytes we can get at once 
 #define BACKLOG 5
 
 void sigchld_handler(int sig) {
@@ -26,27 +25,31 @@ int main(int argc, char *argv[])
 {
     struct addrinfo hints, *res, *p;
     int status, socket_fd, new_fd, numbytes;
-    char ipstr[INET6_ADDRSTRLEN];
+    char ipstr[INET6_ADDRSTRLEN], *port;
     struct sockaddr_storage client_addr;
     socklen_t addr_size;
     struct sigaction sa;
-    char buf[MAXDATASIZE];
-    if (argc != 2) {
-        fprintf(stderr,"usage: showip hostname\n");
-        return 1;
-    }
+    
+    
+  /// Read arguments
+  for (int a = 1; a < argc; a++) {
+    if (!strcmp(argv[a], "-p")) {
+      port = (char *)malloc(sizeof(char) * strlen(argv[a + 1]));
+      strcpy(port, argv[a + 1]);
+    } 
+  }
 
     memset(&hints, 0, sizeof hints); // Clear before using hints
     hints.ai_family = AF_INET; // Force version IPv4
     hints.ai_socktype = SOCK_STREAM; // Use TCP Socket
     hints.ai_flags = AI_PASSIVE;     // fill in my IP for me
 
-    if ((status = getaddrinfo(NULL, PORT, &hints, &res)) != 0) {
+    if ((status = getaddrinfo(NULL, port, &hints, &res)) != 0) {
         fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(status));
         return 2;
     }
 
-    printf("IP addresses for %s:\n\n", argv[1]);
+    
 
     socket_fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
     int yes=1;
@@ -73,15 +76,20 @@ int main(int argc, char *argv[])
 
         if (!fork()) { // this is the child process
             close(socket_fd); // child doesn't need the listener
+            unsigned char *buf = (unsigned char*)malloc(sizeof(unsigned char)*MAXDATASIZE);
 
             if ((numbytes = recv(new_fd, buf, MAXDATASIZE-1, 0)) == -1) {
                 perror("recv");
                 exit(1);
             }
+            unsigned short op = (unsigned short)buf[1];
+            // unsigned short checksum = (unsigned short*)(buf)[1];
+            unsigned short checksum = (unsigned short)buf[2]*(unsigned short)(256) +(unsigned short)buf[3];
+            unsigned char keyword[4];
+            strncpy(keyword,buf+4,4);
+
+            printf("%d op | %02x checksum | %s keyword\n",op,checksum,keyword);
             
-            for (int i=0 ; i<strlen(buf) ; i++) {
-                buf[i]=tolower(buf[i]);
-            }
             printf("server: received '%s'\n",buf);
             if (send(new_fd, buf, strlen(buf), 0) == -1)
                 perror("send");

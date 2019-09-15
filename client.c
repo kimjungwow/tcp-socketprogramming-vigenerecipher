@@ -90,6 +90,7 @@ int main(int argc, char *argv[]) {
     perror("getaddrinfo");
     return 2;
   }
+  // printf("DD\n");
 
   /// Get socket and connect it to server
   if ((socket_fd = socket(servinfo->ai_family, servinfo->ai_socktype,
@@ -111,11 +112,14 @@ int main(int argc, char *argv[]) {
   /// 1. Read stdin using fgets(), put stdin and header into packet, send it to
   /// server and receive packet from server
   /// Since maximum packet size is 10MB, we will read (10M-16)bytes per one loop
+  // printf("ZZ\n");
   unsigned char *buffer_stdin =
-      (unsigned char *)malloc(ONEMEGABYTE * sizeof(unsigned char));
+      (unsigned char *)calloc(ONEMEGABYTE * sizeof(unsigned char),1);
   int sendbytes = 0;
   /// Concatenate stdin into one char*
+  // printf("HERE\n");
   while (fgets(buffer_stdin, sizeof(buffer_stdin), stdin) != NULL) {
+    
     shift_keyword(myheader->keyword, myheader->keyword_temp, sendbytes);
 
     unsigned char *concatenated_stdin =
@@ -160,7 +164,7 @@ int main(int argc, char *argv[]) {
                                (unsigned short)(256) +
                            (unsigned short)(myheader->keyword[3]));
     for (int c = 0; c < (strlen(concatenated_stdin)) / 2; c++) {
-      printf("Below is index %d and %d\n",2*c,2*c+1);
+      // printf("Below is index %d and %d\n",2*c,2*c+1);
       calculate_checksum(&myheader->checksum,
                          (unsigned short)(concatenated_stdin[2 * c]) *
                                  (unsigned short)(256) +
@@ -173,19 +177,19 @@ int main(int argc, char *argv[]) {
               (unsigned short)(concatenated_stdin[strlen(concatenated_stdin) -
                                                   1]));
     unsigned long long lengthtemp = myheader->length;
-    calculate_checksum(&myheader->checksum,
-                         (unsigned short)(myheader->length % 65536));
-    lengthtemp >>= 16;
-    calculate_checksum(&myheader->checksum,
-                         (unsigned short)(lengthtemp % 65536));
+    // calculate_checksum(&myheader->checksum,
+    //                      (unsigned short)(myheader->length % 65536));
+    // lengthtemp >>= 16;
+    // calculate_checksum(&myheader->checksum,
+    //                      (unsigned short)(lengthtemp % 65536));
 // calculate_checksum(&myheader->checksum,
 //                          (unsigned short)((myheader->length>>16) % 65536));
-    // while(lengthtemp>0) {
-    //   printf("%llu = %02x | %hd \n", lengthtemp,lengthtemp, (unsigned short)(lengthtemp%65536));
-    //   calculate_checksum(&myheader->checksum,
-    //                      (unsigned short)(lengthtemp % 65536));
-    //   lengthtemp >>= 16;
-    // }
+    while(lengthtemp>0) {
+      // printf("%llu = %02x | %hd \n", lengthtemp,lengthtemp, (unsigned short)(lengthtemp%65536));
+      calculate_checksum(&myheader->checksum,
+                         (unsigned short)(lengthtemp % 65536));
+      lengthtemp >>= 16;
+    }
 
     myheader->checksum = ~(myheader->checksum);
     myheader->checksum = htons(myheader->checksum);
@@ -196,15 +200,15 @@ int main(int argc, char *argv[]) {
     memcpy(packet_to_send + 4, &myheader->keyword, sizeof(char) * 4);
     memcpy(packet_to_send + 8, &myheader->length, sizeof(unsigned long long));
     // memcpy(packet_to_send + 16, concatenated_stdin, strlen(concatenated_stdin));
-    strcpy(packet_to_send+16, concatenated_stdin);
+    strncpy(packet_to_send+16, concatenated_stdin, strlen(concatenated_stdin));
 
     unsigned char *cursor = packet_to_send;
 
     int readbytes = be64toh(myheader->length), tempreadbytes = readbytes;
-    printf("%c\n",packet_to_send[79999+16]);
-    printf("%c\n",packet_to_send[79998+16]);
-    print_packet(packet_to_send, strlen(concatenated_stdin));
-    printf("\nDONE\n");
+    // printf("%c\n",packet_to_send[79999+16]);
+    // printf("%c\n",packet_to_send[79998+16]);
+    // print_packet(packet_to_send, strlen(concatenated_stdin));
+    // printf("\nDONE\n");
     send(socket_fd, packet_to_send, readbytes, 0);
     // printf("Here3? %zu | %02x\n", strlen(packet_to_send), readbytes);
 
@@ -217,7 +221,6 @@ int main(int argc, char *argv[]) {
         perror("recv");
         exit(1);
       }
-      // printf("%d\n", numbytes);
 
       buf[numbytes] = '\0';
       int startindex = 0;
@@ -226,13 +229,13 @@ int main(int argc, char *argv[]) {
       for (int y = startindex; y < numbytes; y++)
         printf("%c", buf[y]);
 
-      free(buf);
+      
       readbytes -= (numbytes);
-      //   printf("%d %d\n",readbytes,numbytes);
+      free(buf);
     }
-    // sleep(1000);
     free(concatenated_stdin);
     free(packet_to_send);
+    memset(buffer_stdin,0,ONEMEGABYTE*sizeof(unsigned char));
   }
 
   close(socket_fd);
