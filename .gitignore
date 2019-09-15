@@ -3,9 +3,9 @@ client
 server
 server(beej).c
 abcd
-*.sh
 *test
 aa
 love*
 *.txt
 testvectors/test*
+test*
