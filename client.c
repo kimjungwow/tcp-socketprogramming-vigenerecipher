@@ -17,7 +17,7 @@ struct header {
 void calculate_checksum(unsigned short *a, unsigned short b) {
   unsigned short current = *a;
   // printf("%02x and %02x,", current, b);
-  if (current + b > 65536)
+  if (current + b >= 65536)
     *a = current + b - 65535;
   else
     *a = current + b;
@@ -81,6 +81,7 @@ int main(int argc, char *argv[]) {
   /// Even though we send multiple packets, their op and keyword are same.
   /// It is wise to store it in advance.
   myheader->checksum_temp = myheader->checksum;
+  // printf("%x ctemp\n",myheader->checksum_temp);
 
   /// Get address information of client, machine running this code.
   memset(&hints, 0, sizeof hints);
@@ -121,9 +122,10 @@ int main(int argc, char *argv[]) {
   while (fgets(buffer_stdin, sizeof(buffer_stdin), stdin) != NULL) {
     
     shift_keyword(myheader->keyword, myheader->keyword_temp, sendbytes);
+    // printf("DDD\n");
 
     unsigned char *concatenated_stdin =
-        (unsigned char *)malloc(MAXPACKETSIZE * sizeof(unsigned char));
+        (unsigned char *)calloc(MAXPACKETSIZE * sizeof(unsigned char),1);
     strcat(concatenated_stdin, buffer_stdin);
     // printf("%zu %zu \n",strlen(concatenated_stdin),strlen(buffer_stdin));
     // for (int yy = 0; yy < strlen(buffer_stdin); yy++)
@@ -141,6 +143,7 @@ int main(int argc, char *argv[]) {
     for (int b = 0; b < strlen(concatenated_stdin); b++) {
       concatenated_stdin[b] = tolower(concatenated_stdin[b]);
     }
+    sendbytes += strlen(concatenated_stdin)%4;
     // printf("HERE?2 == %zu\n",strlen(concatenated_stdin));
     // print_packet(concatenated_stdin,strlen(concatenated_stdin));
     // for (int yy = 0; yy < (int)(strlen(concatenated_stdin)); yy++)
