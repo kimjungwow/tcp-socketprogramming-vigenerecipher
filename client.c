@@ -162,9 +162,9 @@ int main(int argc, char *argv[]) {
            fgets(buffer_stdin, ONEMEGABYTE, stdin) != NULL) {
       strcat(concatenated_stdin, buffer_stdin);
     }
-    for (int b = 0; b < strlen(concatenated_stdin); b++) {
-      concatenated_stdin[b] = tolower(concatenated_stdin[b]);
-    }
+    // for (int b = 0; b < strlen(concatenated_stdin); b++) {
+    //   concatenated_stdin[b] = tolower(concatenated_stdin[b]);
+    // }
     sendbytes += strlen(concatenated_stdin) % 4;
 
     /// 2. Put stdin and header into packet

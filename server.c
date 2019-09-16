@@ -73,7 +73,7 @@ int main(int argc, char *argv[]) {
     if (!fork()) {      // this is the child process
       close(socket_fd); // child doesn't need the listener
       unsigned char *buf =
-          (unsigned char *)malloc(sizeof(unsigned char) * MAXDATASIZE);
+          (unsigned char *)calloc(sizeof(unsigned char) * MAXDATASIZE,1);
 
       // if ((numbytes = recv(new_fd, buf, MAXDATASIZE - 1, 0)) == -1) {
       //   perror("recv");
@@ -86,6 +86,7 @@ int main(int argc, char *argv[]) {
       int keyworditer = 0;
       while ((numbytes = recv(new_fd, buf, MAXDATASIZE - 1, 0)) > 0) {
         if (firstrecv == 0) {
+          printf("GODGODGOD\n");
           op = (unsigned short)buf[1];
           checksum = (unsigned short)buf[2] * (unsigned short)(256) +
                      (unsigned short)buf[3];
@@ -105,38 +106,43 @@ int main(int argc, char *argv[]) {
         //     keyword[j] += keyword[j]-'a';
         // }
 
-        printf(
-            "%d op | %02x checksum | %s keyword | %d numbytes | %llu length\n",
-            op, checksum, keyword, numbytes, length);
+        
 
         unsigned char *data =
             (unsigned char *)calloc(sizeof(unsigned char) * (numbytes), 1);
-        for (int m = 16 - 16 * firstrecv; m < numbytes; m++) {
-          buf[m] = tolower(buf[m]);
-        }
-
+        // for (int m = 16 - 16 * firstrecv; m < numbytes; m++) {
+        //   buf[m] = tolower(buf[m]);
+        // }
+        int tempchar;
+        printf(
+            "%d op | %02x checksum | %s keyword | %d numbytes | %llu length | %p addr\n",
+            op, checksum, keyword, numbytes, length,data);
         for (int k = 16 - 16 * firstrecv; k < numbytes; k++) {
-          if (buf[k] >= 'a' && buf[k] <= 'z') {
+          unsigned char tempchar = tolower(buf[k]);
+          printf("%c in %d | %c\n",tempchar,k,buf[k]);
+          if (tempchar >= 'a' && tempchar <= 'z') {
             if (op == 0) {
-              if (buf[k] + keyword[keyworditer % 4] - 'a' > 'z')
-                data[k] = buf[k] + keyword[keyworditer % 4] - 26 - 'a';
+              if (tempchar + keyword[keyworditer % 4] - 'a' > 'z')
+                data[k] = tempchar + keyword[keyworditer % 4] - 26 - 'a';
               else
-                data[k] = buf[k] + keyword[keyworditer % 4] - 'a';
+                data[k] = tempchar + keyword[keyworditer % 4] - 'a';
             } else {
-              if (buf[k] - (keyword[keyworditer % 4] - 'a') < 'a')
-                data[k] = buf[k] - (keyword[keyworditer % 4] - 'a') + 26;
+              if (tempchar - (keyword[keyworditer % 4] - 'a') < 'a')
+                data[k] = tempchar - (keyword[keyworditer % 4] - 'a') + 26;
               else
-                data[k] = buf[k] - (keyword[keyworditer % 4] - 'a');
+                data[k] = tempchar - (keyword[keyworditer % 4] - 'a');
             }
             keyworditer++;
 
           } else {
-            data[k] = buf[k];
+            data[k] = tempchar;
           }
         }
+        printf("GOD2\n");
         for (int t = 16 * firstrecv; t < 16; t++) {
           data[t] = buf[t];
         }
+        printf("GOD3\n");
         data[numbytes] = '\0';
         // for (int z = 0; z < numbytes; z++) {
         //   printf("%02x ", data[z]);
@@ -144,14 +150,22 @@ int main(int argc, char *argv[]) {
         //     printf("| ");
         // }
         // printf("\n\n\n\n\n");
-        if (send(new_fd, data, numbytes, 0) == -1)
+        printf("%d =new_fd | data = %p | %d = numbytes\n",new_fd,data,numbytes);
+        int sentbytes;
+        if ((sentbytes =send(new_fd, data, numbytes, 0)) == -1)
           perror("send");
-        firstrecv++;
+        printf("SEND! %d \n", sentbytes);
+        firstrecv=1;
+        // free(data);
       }
       close(new_fd);
+      
+      free(port);
       exit(0);
     }
     close(new_fd); // parent doesn't need this
+    
+    free(port);
   }
 
   return 0;
