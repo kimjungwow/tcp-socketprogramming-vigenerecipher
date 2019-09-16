@@ -75,61 +75,79 @@ int main(int argc, char *argv[]) {
       unsigned char *buf =
           (unsigned char *)malloc(sizeof(unsigned char) * MAXDATASIZE);
 
-      if ((numbytes = recv(new_fd, buf, MAXDATASIZE - 1, 0)) == -1) {
-        perror("recv");
-        exit(1);
-      }
-      unsigned short op = (unsigned short)buf[1];
-      // unsigned short checksum = (unsigned short*)(buf)[1];
-      unsigned short checksum = (unsigned short)buf[2] * (unsigned short)(256) +
-                                (unsigned short)buf[3];
-
-      unsigned char keyword[5];
-      strncpy(keyword, buf + 4, 4);
-      keyword[4]='\0';
-      unsigned long long length = 0;
-      for (int i = 15; i >= 8; i--) {
-        length += (unsigned long long)buf[i] *
-                  (unsigned long long)(pow(256.0, (double)(15 - i)));
-        printf("%llu NOW %d BECAUSE %llu * %llu\n",length,i,(unsigned long long)buf[i],(unsigned long long)(pow(16.0, (double)(15 - i))));
-      }
-
-      // for (int j=0; j<4; j++) {
-      //     keyword[j] += keyword[j]-'a';
+      // if ((numbytes = recv(new_fd, buf, MAXDATASIZE - 1, 0)) == -1) {
+      //   perror("recv");
+      //   exit(1);
       // }
+      int firstrecv = 0;
+      unsigned short op, checksum;
+      unsigned char keyword[5];
+      unsigned long long length = 0;
+      int keyworditer = 0;
+      while ((numbytes = recv(new_fd, buf, MAXDATASIZE - 1, 0)) > 0) {
+        if (firstrecv == 0) {
+          op = (unsigned short)buf[1];
+          checksum = (unsigned short)buf[2] * (unsigned short)(256) +
+                     (unsigned short)buf[3];
+          strncpy(keyword, buf + 4, 4);
+          keyword[4] = '\0';
 
-      printf("%d op | %02x checksum | %s keyword | %d numbytes | %llu length\n",
-             op, checksum, keyword, numbytes, length);
-
-      unsigned char* data = (unsigned char*)calloc(sizeof(unsigned char)*(length),1);
-      for (int m=16;m<length;m++) {
-        buf[m]=tolower(buf[m]);
-      }
-      int keyworditer=0;
-      for (int k=16; k<length;k++) {
-        if(buf[k]>='a'&&buf[k]<='z') {
-          if (buf[k]+keyword[keyworditer%4]-'a'>'z')
-            data[k] = buf[k] + keyword[keyworditer%4] - 26 - 'a';
-          else
-            data[k] = buf[k] + keyword[keyworditer%4] - 'a';
-          keyworditer++;
-          
-        } else {
-          data[k] = buf[k];
+          for (int i = 15; i >= 8; i--) {
+            length += (unsigned long long)buf[i] *
+                      (unsigned long long)(pow(256.0, (double)(15 - i)));
+            printf("%llu NOW %d BECAUSE %llu * %llu\n", length, i,
+                   (unsigned long long)buf[i],
+                   (unsigned long long)(pow(16.0, (double)(15 - i))));
+          }
         }
-          
-      }
-      for (int t=0; t<16; t++) {
+
+        // for (int j=0; j<4; j++) {
+        //     keyword[j] += keyword[j]-'a';
+        // }
+
+        printf(
+            "%d op | %02x checksum | %s keyword | %d numbytes | %llu length\n",
+            op, checksum, keyword, numbytes, length);
+
+        unsigned char *data =
+            (unsigned char *)calloc(sizeof(unsigned char) * (numbytes), 1);
+        for (int m = 16 - 16 * firstrecv; m < numbytes; m++) {
+          buf[m] = tolower(buf[m]);
+        }
+
+        for (int k = 16 - 16 * firstrecv; k < numbytes; k++) {
+          if (buf[k] >= 'a' && buf[k] <= 'z') {
+            if (op == 0) {
+              if (buf[k] + keyword[keyworditer % 4] - 'a' > 'z')
+                data[k] = buf[k] + keyword[keyworditer % 4] - 26 - 'a';
+              else
+                data[k] = buf[k] + keyword[keyworditer % 4] - 'a';
+            } else {
+              if (buf[k] - (keyword[keyworditer % 4] - 'a') < 'a')
+                data[k] = buf[k] - (keyword[keyworditer % 4] - 'a') + 26;
+              else
+                data[k] = buf[k] - (keyword[keyworditer % 4] - 'a');
+            }
+            keyworditer++;
+
+          } else {
+            data[k] = buf[k];
+          }
+        }
+        for (int t = 16 * firstrecv; t < 16; t++) {
           data[t] = buf[t];
+        }
+        data[numbytes] = '\0';
+        // for (int z = 0; z < numbytes; z++) {
+        //   printf("%02x ", data[z]);
+        //   if (z % 4 == 3)
+        //     printf("| ");
+        // }
+        // printf("\n\n\n\n\n");
+        if (send(new_fd, data, numbytes, 0) == -1)
+          perror("send");
+        firstrecv++;
       }
-      data[length]='\0';
-      for (int z=0; z<length; z++) {
-          printf("%02x ",data[z]);
-          if (z%4==3)
-            printf("| ");
-      }
-      if (send(new_fd, data, length, 0) == -1)
-        perror("send");
       close(new_fd);
       exit(0);
     }
