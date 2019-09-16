@@ -23,7 +23,7 @@ void calculate_checksum(unsigned short *a, unsigned short b) {
     *a = current + b;
 }
 
-void get_checksum(struct header myheader, unsigned char *data) {
+void get_checksum(struct header* myheader, unsigned char *data) {
   myheader->checksum = 0;
   calculate_checksum(&myheader->checksum, myheader->op);
   calculate_checksum(&myheader->checksum,
@@ -52,7 +52,7 @@ void get_checksum(struct header myheader, unsigned char *data) {
   myheader->checksum = ~(myheader->checksum);
 }
 
-void put_into_packet(struct header myheader, unsigned char *packet,
+void put_into_packet(struct header* myheader, unsigned char *packet_to_send,
                      unsigned char *data) {
   myheader->checksum = htons(myheader->checksum);
   myheader->length = htobe64(myheader->length);
