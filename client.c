@@ -23,7 +23,61 @@ void calculate_checksum(unsigned short *a, unsigned short b) {
     *a = current + b;
 }
 
-void get_checksum(struct header* myheader, unsigned char *data) {
+unsigned short add_checksum(unsigned short a, unsigned short b) {
+  if (a + b >= 65536)
+    return a + b - 65535;
+  else
+    return a + b;
+}
+
+void get_checksum(struct header *myheader, unsigned char *data) {
+  unsigned short checksum = 0;
+  myheader->checksum = 0;
+  checksum = add_checksum(checksum, myheader->op);
+  checksum = add_checksum(checksum, (unsigned short)(myheader->keyword[0]) *
+                                            (unsigned short)(256) +
+                                        (unsigned short)(myheader->keyword[1]));
+
+  checksum = add_checksum(checksum, (unsigned short)(myheader->keyword[2]) *
+                                            (unsigned short)(256) +
+                                        (unsigned short)(myheader->keyword[3]));
+
+  int c;
+  clock_t v, w;
+  v = clock();
+
+  int datalength = strlen(data) - 1;
+  unsigned char *dataptr, *endpoint = &data[datalength];
+
+  for (dataptr = data; dataptr < endpoint; dataptr += 2) {
+    checksum = add_checksum(checksum,
+                            (unsigned short)(*dataptr) * (unsigned short)(256) +
+                                (unsigned short)(*(dataptr + 1)));
+  }
+
+  // for (c = 0; c < (strlen(data)) / 2; c++) {
+  //   checksum = add_checksum(checksum, (unsigned short)(data[2 * c]) *
+  //   (unsigned short)(256) +
+  //                          (unsigned short)(data[2 * c + 1]));
+  // }
+
+  if (strlen(data) % 2 == 1)
+    checksum =
+        add_checksum(checksum, (unsigned short)(256) *
+                                   (unsigned short)(data[strlen(data) - 1]));
+  w = clock();
+  // printf("\n%.3f in CHECKSUM for loop\n", (float)(w-v)/CLOCKS_PER_SEC);
+
+  unsigned long long lengthtemp = myheader->length;
+  while (lengthtemp > 0) {
+    checksum = add_checksum(checksum, (unsigned short)(lengthtemp % 65536));
+    lengthtemp >>= 16;
+  }
+  checksum = ~checksum;
+  myheader->checksum = checksum;
+}
+
+void get_checksum2(struct header *myheader, unsigned char *data) {
   myheader->checksum = 0;
   calculate_checksum(&myheader->checksum, myheader->op);
   calculate_checksum(&myheader->checksum,
@@ -34,7 +88,7 @@ void get_checksum(struct header* myheader, unsigned char *data) {
                      (unsigned short)(myheader->keyword[2]) *
                              (unsigned short)(256) +
                          (unsigned short)(myheader->keyword[3]));
-                         int c;
+  int c;
   for (c = 0; c < (strlen(data)) / 2; c++) {
     calculate_checksum(&myheader->checksum,
                        (unsigned short)(data[2 * c]) * (unsigned short)(256) +
@@ -53,7 +107,7 @@ void get_checksum(struct header* myheader, unsigned char *data) {
   myheader->checksum = ~(myheader->checksum);
 }
 
-void put_into_packet(struct header* myheader, unsigned char *packet_to_send,
+void put_into_packet(struct header *myheader, unsigned char *packet_to_send,
                      unsigned char *data) {
   myheader->checksum = htons(myheader->checksum);
   myheader->length = htobe64(myheader->length);
@@ -66,14 +120,15 @@ void put_into_packet(struct header* myheader, unsigned char *packet_to_send,
 }
 
 void shift_keyword(char *keyword, char *keyword_temp, int readbytes) {
-  int shift = readbytes % 4, i; 
+  int shift = readbytes % 4, i;
   for (i = 0; i < 4; i++) {
     keyword[(i + shift) % 4] = keyword_temp[i];
   }
 }
 
 void print_packet(unsigned char *buffer, int size) {
-  unsigned char *cursor = buffer; int z;
+  unsigned char *cursor = buffer;
+  int z;
   for (z = 0; z < size + HEADERSIZE; z++) {
     printf("%02x ", *cursor);
     if (z % 4 == 3)
@@ -89,6 +144,9 @@ int main(int argc, char *argv[]) {
   int socket_fd, numbytes;
   struct addrinfo hints, *servinfo, *p;
   char s[INET6_ADDRSTRLEN];
+  clock_t clock1, clock2, clock3, clock4;
+  clock3 = clock();
+  clock1 = clock();
 
   /// Struct header for easily saving arguments
   struct header *myheader = (struct header *)malloc(sizeof(struct header));
@@ -152,6 +210,11 @@ int main(int argc, char *argv[]) {
       (unsigned char *)calloc(ONEMEGABYTE * sizeof(unsigned char), 1);
 
   int sendbytes = 0;
+  clock2 = clock();
+  float timepass;
+  timepass = (float)(clock2 - clock1) / CLOCKS_PER_SEC;
+  // printf("\n%.3f BEFORE WHILE\n",timepass);
+  clock1 = clock();
   /// Concatenate stdin into one char*
   while (fgets(buffer_stdin, ONEMEGABYTE, stdin) != NULL) {
 
@@ -176,55 +239,22 @@ int main(int argc, char *argv[]) {
     myheader->nworder_length = htonl((uint32_t)(myheader->length));
     // myheader->checksum = myheader->checksum_temp;
     /// Checksum is one's complement of sum of op, keyword, length and data.
+    clock2 = clock();
+    timepass = (float)(clock2 - clock1) / CLOCKS_PER_SEC;
+    // printf("\n%.3f BEFORE Getchecksum\n",timepass);
+    clock1 = clock();
+
     get_checksum(myheader, concatenated_stdin);
-    /*
-        myheader->checksum = 0;
-        calculate_checksum(&myheader->checksum, myheader->op);
-        calculate_checksum(&myheader->checksum,
-                           (unsigned short)(myheader->keyword[0]) *
-                                   (unsigned short)(256) +
-                               (unsigned short)(myheader->keyword[1]));
-        calculate_checksum(&myheader->checksum,
-                           (unsigned short)(myheader->keyword[2]) *
-                                   (unsigned short)(256) +
-                               (unsigned short)(myheader->keyword[3]));
-        for (int c = 0; c < (strlen(concatenated_stdin)) / 2; c++) {
-          calculate_checksum(&myheader->checksum,
-                             (unsigned short)(concatenated_stdin[2 * c]) *
-                                     (unsigned short)(256) +
-                                 (unsigned short)(concatenated_stdin[2 * c +
-       1]));
-        }
-        if (strlen(concatenated_stdin) % 2 == 1)
-          calculate_checksum(
-              &myheader->checksum,
-              (unsigned short)(256) *
-                  (unsigned short)(concatenated_stdin[strlen(concatenated_stdin)
-       -
-                                                      1]));
-        unsigned long long lengthtemp = myheader->length;
-
-        while (lengthtemp > 0) {
-          calculate_checksum(&myheader->checksum,
-                             (unsigned short)(lengthtemp % 65536));
-          lengthtemp >>= 16;
-        }
-
-        myheader->checksum = ~(myheader->checksum);*/
+    clock2 = clock();
+    timepass = (float)(clock2 - clock1) / CLOCKS_PER_SEC;
+    // printf("\n%.3f After Getchecksum\n",timepass);
+    clock1 = clock();
 
     put_into_packet(myheader, packet_to_send, concatenated_stdin);
-    /*
-        myheader->checksum = htons(myheader->checksum);
-        myheader->length = htobe64(myheader->length);
-        memset(packet_to_send, 0, 1);
-        memcpy(packet_to_send + 1, &myheader->op, sizeof(char));
-        memcpy(packet_to_send + 2, &myheader->checksum,
-       sizeof(myheader->checksum));
-        memcpy(packet_to_send + 4, &myheader->keyword, sizeof(char) * 4);
-        memcpy(packet_to_send + 8, &myheader->length, sizeof(unsigned long
-       long));
-        strncpy(packet_to_send + 16, concatenated_stdin,
-                strlen(concatenated_stdin));*/
+    clock2 = clock();
+    timepass = (float)(clock2 - clock1) / CLOCKS_PER_SEC;
+    // printf("\n%.3f packet\n",timepass);
+    clock1 = clock();
 
     int readbytes = be64toh(myheader->length), tempreadbytes = readbytes;
     send(socket_fd, packet_to_send, readbytes, 0);
@@ -248,10 +278,16 @@ int main(int argc, char *argv[]) {
       readbytes -= (numbytes);
       free(buf);
     }
+    clock2 = clock();
+    timepass = (float)(clock2 - clock1) / CLOCKS_PER_SEC;
+    // printf("\n%.3f Send and Recv\n",timepass);
     free(concatenated_stdin);
     free(packet_to_send);
     memset(buffer_stdin, 0, ONEMEGABYTE * sizeof(unsigned char));
   }
+  clock4 = clock();
+  timepass = (float)(clock4 - clock3) / CLOCKS_PER_SEC;
+  // printf("\n%.3f TOTAL\n",timepass);
 
   close(socket_fd);
 
