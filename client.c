@@ -34,7 +34,8 @@ void get_checksum(struct header* myheader, unsigned char *data) {
                      (unsigned short)(myheader->keyword[2]) *
                              (unsigned short)(256) +
                          (unsigned short)(myheader->keyword[3]));
-  for (int c = 0; c < (strlen(data)) / 2; c++) {
+                         int c;
+  for (c = 0; c < (strlen(data)) / 2; c++) {
     calculate_checksum(&myheader->checksum,
                        (unsigned short)(data[2 * c]) * (unsigned short)(256) +
                            (unsigned short)(data[2 * c + 1]));
@@ -65,15 +66,15 @@ void put_into_packet(struct header* myheader, unsigned char *packet_to_send,
 }
 
 void shift_keyword(char *keyword, char *keyword_temp, int readbytes) {
-  int shift = readbytes % 4;
-  for (int i = 0; i < 4; i++) {
+  int shift = readbytes % 4, i; 
+  for (i = 0; i < 4; i++) {
     keyword[(i + shift) % 4] = keyword_temp[i];
   }
 }
 
 void print_packet(unsigned char *buffer, int size) {
-  unsigned char *cursor = buffer;
-  for (int z = 0; z < size + HEADERSIZE; z++) {
+  unsigned char *cursor = buffer; int z;
+  for (z = 0; z < size + HEADERSIZE; z++) {
     printf("%02x ", *cursor);
     if (z % 4 == 3)
       printf("| ");
@@ -95,7 +96,8 @@ int main(int argc, char *argv[]) {
   myheader->checksum = 0;
 
   /// Read arguments
-  for (int a = 1; a < argc; a++) {
+  int a;
+  for (a = 1; a < argc; a++) {
     if (!strcmp(argv[a], "-h")) {
       host = (char *)malloc(sizeof(char) * strlen(argv[a + 1]));
       strcpy(host, argv[a + 1]);
@@ -239,7 +241,8 @@ int main(int argc, char *argv[]) {
       int startindex = 0;
       if (readbytes == tempreadbytes)
         startindex = HEADERSIZE;
-      for (int y = startindex; y < numbytes; y++)
+      int y;
+      for (y = startindex; y < numbytes; y++)
         printf("%c", buf[y]);
 
       readbytes -= (numbytes);

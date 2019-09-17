@@ -31,7 +31,8 @@ int main(int argc, char *argv[]) {
   struct sigaction sa;
 
   /// Read arguments
-  for (int a = 1; a < argc; a++) {
+  int a;
+  for (a = 1; a < argc; a++) {
     if (!strcmp(argv[a], "-p")) {
       port = (char *)malloc(sizeof(char) * strlen(argv[a + 1]));
       strcpy(port, argv[a + 1]);
@@ -92,8 +93,9 @@ int main(int argc, char *argv[]) {
                      (unsigned short)buf[3];
           strncpy(keyword, buf + 4, 4);
           keyword[4] = '\0';
+          int i;
 
-          for (int i = 15; i >= 8; i--) {
+          for (i = 15; i >= 8; i--) {
             length += (unsigned long long)buf[i] *
                       (unsigned long long)(pow(256.0, (double)(15 - i)));
             printf("%llu NOW %d BECAUSE %llu * %llu\n", length, i,
@@ -117,7 +119,8 @@ int main(int argc, char *argv[]) {
         printf(
             "%d op | %02x checksum | %s keyword | %d numbytes | %llu length | %p addr\n",
             op, checksum, keyword, numbytes, length,data);
-        for (int k = 16 - 16 * firstrecv; k < numbytes; k++) {
+        int k;
+        for (k = 16 - 16 * firstrecv; k < numbytes; k++) {
           unsigned char tempchar = tolower(buf[k]);
           printf("%c in %d | %c\n",tempchar,k,buf[k]);
           if (tempchar >= 'a' && tempchar <= 'z') {
@@ -139,7 +142,8 @@ int main(int argc, char *argv[]) {
           }
         }
         printf("GOD2\n");
-        for (int t = 16 * firstrecv; t < 16; t++) {
+        int t;
+        for (t = 16 * firstrecv; t < 16; t++) {
           data[t] = buf[t];
         }
         printf("GOD3\n");
