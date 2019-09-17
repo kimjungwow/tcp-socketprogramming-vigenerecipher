@@ -13,9 +13,15 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#define MAXDATASIZE 10 * 1024 * 1024 // max number of bytes we can get at once
+#define HEADERSIZE 16           /// Length of header is always 16bytes.
+#define MAXPACKETSIZE 10000000 
+#define MAXDATASIZE MAXPACKETSIZE-HEADERSIZE+1
+#define MAXONEBYTE 256
+#define MAXTWOBYTES 65536
+#define KEYWORDSIZE 4
 #define BACKLOG 5
 
+void shiftKeyword(char *keyword, char *keyword_temp, int readbytes);
 void sigchld_handler(int sig) {
   int olderrno = errno;
   while (waitpid(-1, NULL, WNOHANG) > 0)
@@ -74,7 +80,7 @@ int main(int argc, char *argv[]) {
     if (!fork()) {      // this is the child process
       close(socket_fd); // child doesn't need the listener
       unsigned char *buf =
-          (unsigned char *)calloc(sizeof(unsigned char) * MAXDATASIZE,1);
+          (unsigned char *)calloc(sizeof(unsigned char) * MAXDATASIZE, 1);
 
       // if ((numbytes = recv(new_fd, buf, MAXDATASIZE - 1, 0)) == -1) {
       //   perror("recv");
@@ -83,9 +89,11 @@ int main(int argc, char *argv[]) {
       int firstrecv = 0;
       unsigned short op, checksum;
       unsigned char keyword[5];
+      unsigned char keyword_temp[5];
       unsigned long long length = 0;
       int keyworditer = 0;
-      while ((numbytes = recv(new_fd, buf, MAXDATASIZE - 1, 0)) > 0) {
+      while ((numbytes = recv(new_fd, buf, MAXDATASIZE, 0)) > 0) {
+        int writebytes=0;
         if (firstrecv == 0) {
           printf("GODGODGOD\n");
           op = (unsigned short)buf[1];
@@ -93,6 +101,8 @@ int main(int argc, char *argv[]) {
                      (unsigned short)buf[3];
           strncpy(keyword, buf + 4, 4);
           keyword[4] = '\0';
+          strncpy(keyword_temp, buf + 4, 4);
+          keyword_temp[4] = '\0';
           int i;
 
           for (i = 15; i >= 8; i--) {
@@ -108,21 +118,20 @@ int main(int argc, char *argv[]) {
         //     keyword[j] += keyword[j]-'a';
         // }
 
-        
-
         unsigned char *data =
             (unsigned char *)calloc(sizeof(unsigned char) * (numbytes), 1);
         // for (int m = 16 - 16 * firstrecv; m < numbytes; m++) {
         //   buf[m] = tolower(buf[m]);
         // }
+        shiftKeyword(keyword,keyword_temp,writebytes);
         int tempchar;
-        printf(
-            "%d op | %02x checksum | %s keyword | %d numbytes | %llu length | %p addr\n",
-            op, checksum, keyword, numbytes, length,data);
+        printf("%d op | %02x checksum | %s keyword | %d numbytes | %llu length "
+               "| %p addr\n",
+               op, checksum, keyword, numbytes, length, data);
         int k;
         for (k = 16 - 16 * firstrecv; k < numbytes; k++) {
           unsigned char tempchar = tolower(buf[k]);
-          printf("%c in %d | %c\n",tempchar,k,buf[k]);
+          // printf("%c in %d | %c\n", tempchar, k, buf[k]);
           if (tempchar >= 'a' && tempchar <= 'z') {
             if (op == 0) {
               if (tempchar + keyword[keyworditer % 4] - 'a' > 'z')
@@ -154,23 +163,37 @@ int main(int argc, char *argv[]) {
         //     printf("| ");
         // }
         // printf("\n\n\n\n\n");
-        printf("%d =new_fd | data = %p | %d = numbytes\n",new_fd,data,numbytes);
+        printf("%d =new_fd | data = %p | %d = numbytes\n", new_fd, data,
+               numbytes);
         int sentbytes;
-        if ((sentbytes =send(new_fd, data, numbytes, 0)) == -1)
+        if ((sentbytes = send(new_fd, data, numbytes, 0)) == -1)
           perror("send");
         printf("SEND! %d \n", sentbytes);
-        firstrecv=1;
+        firstrecv = 1;
         // free(data);
+        memset(buf,0,sizeof(unsigned char) * MAXDATASIZE);
+        writebytes+=numbytes%4;
       }
       close(new_fd);
-      
-      free(port);
+
+      // free(port);
       exit(0);
     }
     close(new_fd); // parent doesn't need this
+
     
-    free(port);
   }
+  free(port);
 
   return 0;
+}
+
+void shiftKeyword(char *keyword, char *keyword_temp, int readbytes) {
+  /// Depending on number of characters read, the keyword can be changed.
+  /// If I already sent 9999981 characters when the keyword is 'cake',
+  /// next keyword should be 'akec', not 'cake'.
+  int shift = readbytes % KEYWORDSIZE, i;
+  for (i = 0; i < KEYWORDSIZE; i++) {
+    keyword[(i + shift) % KEYWORDSIZE] = keyword_temp[i];
+  }
 }
