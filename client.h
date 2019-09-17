@@ -14,12 +14,19 @@
 #include <unistd.h>
 #include <stdio_ext.h>
 
+#define HEADERSIZE 16           /// Length of header is always 16bytes.
+#define MAXPACKETSIZE 10000000 
+#define MAXDATASIZE MAXPACKETSIZE-HEADERSIZE+1
+#define MAXONEBYTE 256
+#define MAXTWOBYTES 65536
+#define KEYWORDSIZE 4
+
 struct header {
   unsigned short op;
   unsigned short checksum;
   unsigned short checksum_temp;
-  char arrKeyword[4];      /// Keyword is always 4 characters.
-  char arrKeyword_temp[4]; /// The order of letters can be different per packet.
+  char arrKeyword[KEYWORDSIZE];      /// Keyword is always 4 characters.
+  char arrKeyword_temp[KEYWORDSIZE]; /// The order of letters can be different per packet.
   unsigned long long length;
   uint32_t nworder_length;
 };
@@ -29,4 +36,4 @@ void getChecksum(struct header *myheader, unsigned char *data);
 void fillPacket(struct header *myheader, unsigned char *packet_to_send,
                      unsigned char *data);
 void shiftKeyword(char *keyword, char *keyword_temp, int readbytes);
-size_t readStdin(unsigned char *str,  unsigned char* dst,FILE* stream);
+int receiveAndPrint(int socket_fd, int startindex);

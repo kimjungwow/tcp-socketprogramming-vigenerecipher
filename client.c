@@ -1,23 +1,14 @@
 #include "client.h"
 
-#define ONEMEGABYTE 1024 * 1024 /// max number of bytes we can get at once
-#define HEADERSIZE 16           /// Length of header is always 16bytes.
-// #define MAXPACKETSIZE ONEMEGABYTE * 10 - HEADERSIZE*3
-#define MAXPACKETSIZE 10000000-15
-#define MAXONEBYTE 256
-#define MAXTWOBYTES 65536
-
 int main(int argc, char *argv[]) {
-
   char *host, *port;
-  int socket_fd, numbytes, a, sendbytes = 0;
+  int socket_fd, a, sendbytes = 0;
   struct addrinfo hints, *servinfo, *p;
-  char s[INET6_ADDRSTRLEN];
 
-  /// Struct "header" for easily saving arguments
-  struct header *myheader = (struct header *)calloc(sizeof(struct header),1);
+  /// Struct "header" for easily saving arguments.
+  struct header *myheader = (struct header *)calloc(sizeof(struct header), 1);
 
-  /// Read arguments
+  /// Read arguments.
   for (a = 1; a < argc; a++) {
     if (!strcmp(argv[a], "-h")) {
       host = (char *)malloc(sizeof(char) * strlen(argv[a + 1]));
@@ -30,7 +21,7 @@ int main(int argc, char *argv[]) {
     } else if (!strcmp(argv[a], "-k")) {
       strcpy(myheader->arrKeyword_temp, argv[a + 1]);
     }
-  } 
+  }
 
   /// Get address information of client, machine running this code.
   memset(&hints, 0, sizeof hints);
@@ -38,13 +29,14 @@ int main(int argc, char *argv[]) {
   hints.ai_socktype = SOCK_STREAM;
   if (getaddrinfo(host, port, &hints, &servinfo) != 0) {
     perror("getaddrinfo");
-    return 2;
+    return -1;
   }
 
-  /// Get socket and connect it to server
+  /// Get socket and connect it to server.
   if ((socket_fd = socket(servinfo->ai_family, servinfo->ai_socktype,
                           servinfo->ai_protocol)) == -1) {
     perror("socket");
+    return -1;
   }
   if (connect(socket_fd, servinfo->ai_addr, servinfo->ai_addrlen) == -1) {
     close(socket_fd);
@@ -52,80 +44,51 @@ int main(int argc, char *argv[]) {
   }
   if (servinfo == NULL) {
     fprintf(stderr, "client: failed to connect\n");
-    return 2;
+    return -1;
   }
-  freeaddrinfo(servinfo); // After connecting, server information won't be used
+  freeaddrinfo(servinfo); // After connecting, server information won't be used.
 
-  /// Time to send and receive packets!
-  /// 1. Read stdin using fgets(), put stdin and header into packet, send it to
-  /// server and receive packet from server
-  /// Since maximum packet size is 10MB, we will read (10M-16)bytes per one loop
+  /// Since maximum packet size is 10MB, read (10000000-16) bytes per one loop.
+  unsigned char *readStdin =
+      (unsigned char *)calloc(MAXDATASIZE * sizeof(unsigned char), 1);
 
-  // unsigned char *buffer_stdin =
-  //     (unsigned char *)calloc(ONEMEGABYTE * sizeof(unsigned char), 1);
-unsigned char *concatenated_stdin =
-        (unsigned char *)calloc(MAXPACKETSIZE * sizeof(unsigned char), 1);
-  /// Concatenate stdin into one char*
-  while (fgets(concatenated_stdin, MAXPACKETSIZE, stdin) != NULL) {
-    // while (fgets(buffer_stdin, ONEMEGABYTE, stdin) != NULL) {
-    // unsigned char *concatenated_stdin =
-    //     (unsigned char *)calloc(MAXPACKETSIZE * sizeof(unsigned char), 1);
+  /// 1. Read stdin using fgets()
+  while (fgets(readStdin, MAXDATASIZE, stdin) != NULL) {
 
+    /// Depending on number of characters read, the keyword can be changed.
     shiftKeyword(myheader->arrKeyword, myheader->arrKeyword_temp, sendbytes);
+    sendbytes += strlen(readStdin) % KEYWORDSIZE;
 
-    // sendbytes += readStdin(buffer_stdin, concatenated_stdin, stdin) % 4;
-    sendbytes += strlen(concatenated_stdin)%4;
-
-    /// 2. Put stdin and header into packet
-    unsigned char *packet_to_send = (unsigned char *)calloc(
-        sizeof(unsigned char) * (strlen(concatenated_stdin) + HEADERSIZE), 1);
-    myheader->length = strlen(concatenated_stdin) + HEADERSIZE;
+    /// 2. Calculate checksum, and put stdin and header into packet.
+    unsigned char *packetToSend = (unsigned char *)calloc(
+        sizeof(unsigned char) * (strlen(readStdin) + HEADERSIZE), 1);
+    myheader->length = strlen(readStdin) + HEADERSIZE;
     myheader->nworder_length = htonl((uint32_t)(myheader->length));
-
-    
-      /// Checksum is one's complement of sum of op, keyword, length and data.
-  /// First, let's add op.
-
-  /// Even though we send multiple packets, their ops are same.
-  /// It is wise to store it in advance.
     /// Checksum is one's complement of sum of op, keyword, length and data.
+    getChecksum(myheader, readStdin);
+    fillPacket(myheader, packetToSend, readStdin);
 
-    getChecksum(myheader, concatenated_stdin);
+    /// 3. Send packet to server
+    int readbytes = be64toh(myheader->length), tempreadbytes = readbytes,
+        startindex = 16;
+    send(socket_fd, packetToSend, readbytes, 0);
+    free(packetToSend); /// Free useless pointer.
 
-    fillPacket(myheader, packet_to_send, concatenated_stdin);
-
-    int readbytes = be64toh(myheader->length), tempreadbytes = readbytes;
-    // printf("\nSEND %d readbytes\n",readbytes);
-    send(socket_fd, packet_to_send, readbytes, 0);
-
+    /// 4. Receive packet from server and print it.
     while (readbytes > 0) {
-      char *buf = (char *)malloc(MAXPACKETSIZE * sizeof(char));
-
-      if ((numbytes = recv(socket_fd, buf, MAXPACKETSIZE - 1, 0)) == -1) {
-        perror("recv");
-        exit(1);
-      }
-
-      buf[numbytes] = '\0';
-      int startindex = 0;
-      if (readbytes == tempreadbytes)
-        startindex = HEADERSIZE;
-      int y;
-      for (y = startindex; y < numbytes; y++)
-        printf("%c", buf[y]);
-
-      readbytes -= (numbytes);
-      free(buf);
+      readbytes -= receiveAndPrint(socket_fd, startindex);
+      startindex = 0;
     }
 
-    // free(concatenated_stdin);
-    free(packet_to_send);
-    // memset(buffer_stdin, 0, ONEMEGABYTE * sizeof(unsigned char));
-    memset(concatenated_stdin,0,MAXPACKETSIZE*sizeof(unsigned char));
+    /// Clear buffer for using in the next iteration.
+    memset(readStdin, 0, MAXDATASIZE * sizeof(unsigned char));
   }
 
+  /// Close socket.
   close(socket_fd);
 
+  /// Free useless pointers.
+  free(readStdin);
   free(host);
   free(port);
   free(myheader);
@@ -135,24 +98,26 @@ unsigned char *concatenated_stdin =
 
 unsigned short addShorts(unsigned short a, unsigned short b) {
   if (a + b >= MAXTWOBYTES)
-    return a + b - 65535;
+    return a + b - MAXTWOBYTES + 1; /// To cope with overflow.
   else
     return a + b;
 }
 
 void getChecksum(struct header *myheader, unsigned char *data) {
   unsigned short checksum = 0;
-  myheader->checksum = 0;
+  int c, datalength = strlen(data) - 1;
+  unsigned char *dataptr, *endpoint = &data[datalength];
+  unsigned long long lengthtemp = myheader->length;
+
+  /// Checksum is one's complement of sum of op, keyword, length and data.
   checksum = addShorts(checksum, myheader->op);
   checksum = addShorts(checksum, (unsigned short)(myheader->arrKeyword[0]) *
                                          (unsigned short)(MAXONEBYTE) +
                                      (unsigned short)(myheader->arrKeyword[1]));
-
   checksum = addShorts(checksum, (unsigned short)(myheader->arrKeyword[2]) *
                                          (unsigned short)(MAXONEBYTE) +
                                      (unsigned short)(myheader->arrKeyword[3]));
-  int c, datalength = strlen(data) - 1;
-  unsigned char *dataptr, *endpoint = &data[datalength];
+  /// To reduce the time to run, use the pointer instead of directly accessing the index.
   for (dataptr = data; dataptr < endpoint; dataptr += 2) {
     checksum = addShorts(checksum, (unsigned short)(*dataptr) *
                                            (unsigned short)(MAXONEBYTE) +
@@ -162,7 +127,7 @@ void getChecksum(struct header *myheader, unsigned char *data) {
     checksum =
         addShorts(checksum, (unsigned short)(MAXONEBYTE) *
                                 (unsigned short)(data[strlen(data) - 1]));
-  unsigned long long lengthtemp = myheader->length;
+  /// Length is composed of 64 bits.
   while (lengthtemp > 0) {
     checksum = addShorts(checksum, (unsigned short)(lengthtemp % MAXTWOBYTES));
     lengthtemp >>= 16;
@@ -171,30 +136,53 @@ void getChecksum(struct header *myheader, unsigned char *data) {
   myheader->checksum = checksum;
 }
 
-void fillPacket(struct header *myheader, unsigned char *packet_to_send,
+void fillPacket(struct header *myheader, unsigned char *packetToSend,
                 unsigned char *data) {
   myheader->checksum = htons(myheader->checksum);
   myheader->length = htobe64(myheader->length);
-  memset(packet_to_send, 0, 1);
-  memcpy(packet_to_send + 1, &myheader->op, sizeof(char));
-  memcpy(packet_to_send + 2, &myheader->checksum, sizeof(myheader->checksum));
-  memcpy(packet_to_send + 4, &myheader->arrKeyword, sizeof(char) * 4);
-  memcpy(packet_to_send + 8, &myheader->length, sizeof(unsigned long long));
-  strncpy(packet_to_send + 16, data, strlen(data));
+  
+  /**********************************************************************
+    0             16                  32                                63
+    | op(16 bits) | checksum(16 bits) |          keyword(32 bits)       |
+    |                           length(64 bits)                         |
+    |                               data                                |
+    |                               data                                |
+    |                               data                                |
+  
+  ************MAXIMUM LENGTH OF EACH MESSAGE IS LIMITED TO 10MB!*********
+
+  **********************************************************************/
+
+  memset(packetToSend, 0, 1);
+  memcpy(packetToSend + 1, &myheader->op, sizeof(char));
+  memcpy(packetToSend + 2, &myheader->checksum, sizeof(unsigned short));
+  memcpy(packetToSend + 4, &myheader->arrKeyword, sizeof(char) * KEYWORDSIZE);
+  memcpy(packetToSend + 8, &myheader->length, sizeof(unsigned long long));
+  strncpy(packetToSend + HEADERSIZE, data, strlen(data));
 }
 
 void shiftKeyword(char *keyword, char *keyword_temp, int readbytes) {
-  int shift = readbytes % 4, i;
-  for (i = 0; i < 4; i++) {
-    keyword[(i + shift) % 4] = keyword_temp[i];
+  /// Depending on number of characters read, the keyword can be changed.
+  /// If I already sent 9999981 characters when the keyword is 'cake',
+  /// next keyword should be 'akec', not 'cake'.
+  int shift = readbytes % KEYWORDSIZE, i;
+  for (i = 0; i < KEYWORDSIZE; i++) {
+    keyword[(i + shift) % KEYWORDSIZE] = keyword_temp[i];
   }
 }
 
-size_t readStdin(unsigned char *str, unsigned char *dst, FILE *stream) {
-  strcat(dst, str);
-  while (strlen(dst) + ONEMEGABYTE < MAXPACKETSIZE &&
-         fgets(str, ONEMEGABYTE, stream) != NULL) {
-    strcat(dst, str);
+int receiveAndPrint(int socket_fd, int startindex) {
+  /// Receive message from server.
+  char *buf = (char *)malloc(MAXDATASIZE * sizeof(char));
+  int y, numbytes;
+  if ((numbytes = recv(socket_fd, buf, MAXDATASIZE - 1, 0)) == -1) {
+    perror("recv");
+    exit(1);
   }
-  return strlen(dst);
+  buf[numbytes] = '\0';
+  /// Print message from server.
+  for (y = startindex; y < numbytes; y++)
+    printf("%c", buf[y]);
+  free(buf);
+  return numbytes;
 }
