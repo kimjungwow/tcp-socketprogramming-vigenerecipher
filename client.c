@@ -59,13 +59,14 @@ int main(int argc, char *argv[]) {
     shiftKeyword(myheader->arrKeyword, myheader->arrKeyword_temp, sendbytes);
     // sendbytes += strlen(readStdin) % KEYWORDSIZE;
     int temp = countAlphabet(readStdin);
-    sendbytes += temp % KEYWORDSIZE;
+    sendbytes = temp % KEYWORDSIZE;
+    // sendbytes += temp % KEYWORDSIZE;
 
     /// 2. Calculate checksum, and put stdin and header into packet.
     unsigned char *packetToSend = (unsigned char *)calloc(
         sizeof(unsigned char) * (strlen(readStdin) + HEADERSIZE), 1);
     myheader->length = strlen(readStdin) + HEADERSIZE;
-    myheader->nworder_length = htonl((uint32_t)(myheader->length));
+    // myheader->nworder_length = htonl((uint32_t)(myheader->length));
     /// Checksum is one's complement of sum of op, keyword, length and data.
     getChecksum(myheader, readStdin);
     fillPacket(myheader, packetToSend, readStdin);
@@ -81,7 +82,9 @@ int main(int argc, char *argv[]) {
       readbytes -= receiveAndPrint(socket_fd, startindex);
       startindex = 0;
     }
-    // printf("\n\nKeyword : %c%c%c%c | strlen %d | alphabet %d | sendbytes %d\n\n",myheader->arrKeyword[0],myheader->arrKeyword[1],myheader->arrKeyword[2],myheader->arrKeyword[3],strlen(readStdin),temp,sendbytes);
+    // printf("\n\nKeyword : %c%c%c%c | strlen %d | alphabet %d | sendbytes %d\n\n",
+    // myheader->arrKeyword[0],myheader->arrKeyword[1],myheader->arrKeyword[2],myheader->arrKeyword[3],
+    // strlen(readStdin),temp,sendbytes);
 
     /// Clear buffer for using in the next iteration.
     memset(readStdin, 0, MAXDATASIZE * sizeof(unsigned char));
@@ -100,10 +103,13 @@ int main(int argc, char *argv[]) {
 }
 
 unsigned short addShorts(unsigned short a, unsigned short b) {
-  if (a + b >= MAXTWOBYTES)
+  if (a + b >= MAXTWOBYTES) {
+    // printf("%02x + %02x -> %02x\n",a,b,a+b-MAXTWOBYTES+1);
     return a + b - MAXTWOBYTES + 1; /// To cope with overflow.
-  else
+  } else {
+    // printf("%02x + %02x -> %02x\n",a,b,a+b);
     return a + b;
+  }
 }
 
 void getChecksum(struct header *myheader, unsigned char *data) {
@@ -120,7 +126,8 @@ void getChecksum(struct header *myheader, unsigned char *data) {
   checksum = addShorts(checksum, (unsigned short)(myheader->arrKeyword[2]) *
                                          (unsigned short)(MAXONEBYTE) +
                                      (unsigned short)(myheader->arrKeyword[3]));
-  /// To reduce the time to run, use the pointer instead of directly accessing the index.
+  /// To reduce the time to run, use the pointer instead of directly accessing
+  /// the index.
   for (dataptr = data; dataptr < endpoint; dataptr += 2) {
     checksum = addShorts(checksum, (unsigned short)(*dataptr) *
                                            (unsigned short)(MAXONEBYTE) +
@@ -141,9 +148,11 @@ void getChecksum(struct header *myheader, unsigned char *data) {
 
 void fillPacket(struct header *myheader, unsigned char *packetToSend,
                 unsigned char *data) {
+
+
   myheader->checksum = htons(myheader->checksum);
   myheader->length = htobe64(myheader->length);
-  
+
   /**********************************************************************
     0             16                  32                                63
     | op(16 bits) | checksum(16 bits) |          keyword(32 bits)       |
@@ -151,7 +160,7 @@ void fillPacket(struct header *myheader, unsigned char *packetToSend,
     |                               data                                |
     |                               data                                |
     |                               data                                |
-  
+
   ************MAXIMUM LENGTH OF EACH MESSAGE IS LIMITED TO 10MB!*********
 
   **********************************************************************/
@@ -170,7 +179,10 @@ void shiftKeyword(char *keyword, char *keyword_temp, int readbytes) {
   /// next keyword should be 'akec', not 'cake'.
   int shift = readbytes % KEYWORDSIZE, i;
   for (i = 0; i < KEYWORDSIZE; i++) {
-    keyword[(i + shift) % KEYWORDSIZE] = keyword_temp[i];
+    keyword[i] = keyword_temp[(i + shift) % KEYWORDSIZE];
+  }
+  for (i = 0; i < KEYWORDSIZE; i++) {
+    keyword_temp[i] = keyword[i];
   }
 }
 
@@ -191,13 +203,14 @@ int receiveAndPrint(int socket_fd, int startindex) {
 }
 
 int countAlphabet(unsigned char *data) {
-  int count=0, datalength = strlen(data) - 1;
+  int count = 0, datalength = strlen(data) - 1;
   unsigned char *dataptr, *endpoint = &data[datalength];
-  /// To reduce the time to run, use the pointer instead of directly accessing the index.
+  /// To reduce the time to run, use the pointer instead of directly accessing
+  /// the index.
   for (dataptr = data; dataptr < endpoint; dataptr++) {
-    if((*dataptr>='A'&&*dataptr<='Z')||(*dataptr>='a'&&*dataptr<='z'))
+    if ((*dataptr >= 'A' && *dataptr <= 'Z') ||
+        (*dataptr >= 'a' && *dataptr <= 'z'))
       count++;
   }
   return count;
-
 }

@@ -12,16 +12,33 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <stdbool.h>
 
-#define HEADERSIZE 16           /// Length of header is always 16bytes.
-#define MAXPACKETSIZE 10000000 
-#define MAXDATASIZE MAXPACKETSIZE-HEADERSIZE+1
+#define HEADERSIZE 16 /// Length of header is always 16bytes.
+#define MAXPACKETSIZE 10000000
+#define MAXDATASIZE MAXPACKETSIZE - HEADERSIZE + 1
 #define MAXONEBYTE 256
 #define MAXTWOBYTES 65536
 #define KEYWORDSIZE 4
-#define BACKLOG 5
-
+#define BACKLOG 20
+struct header {
+  unsigned short op;
+  unsigned short checksum;
+  unsigned short checksum_temp;
+  char arrKeyword[KEYWORDSIZE];      /// Keyword is always 4 characters.
+  char arrKeyword_temp[KEYWORDSIZE]; /// The order of letters can be different
+                                     /// per packet.
+  unsigned long long length;
+  uint32_t nworder_length;
+};
 void shiftKeyword(char *keyword, char *keyword_temp, int readbytes);
+bool checkInvalidKeyword(unsigned char *keyword);
+void getChecksum(struct header *myheader, unsigned char *data,
+                 unsigned long long length);
+bool checkInvalidChecksum(struct header *myheader, unsigned char *data,
+                          unsigned short givenChecksum,
+                          unsigned long long length);
+unsigned short addShorts(unsigned short a, unsigned short b);
 void sigchld_handler(int sig) {
   int olderrno = errno;
   while (waitpid(-1, NULL, WNOHANG) > 0)
@@ -81,6 +98,8 @@ int main(int argc, char *argv[]) {
       close(socket_fd); // child doesn't need the listener
       unsigned char *buf =
           (unsigned char *)calloc(sizeof(unsigned char) * MAXDATASIZE, 1);
+      struct header *myheader =
+          (struct header *)calloc(sizeof(struct header), 1);
 
       // if ((numbytes = recv(new_fd, buf, MAXDATASIZE - 1, 0)) == -1) {
       //   perror("recv");
@@ -90,14 +109,14 @@ int main(int argc, char *argv[]) {
       unsigned short op, checksum;
       unsigned char keyword[5];
       unsigned char keyword_temp[5];
-      unsigned long long length = 0, comparelength=0;
+      unsigned long long length = 0, comparelength = 0;
       int keyworditer;
       while ((numbytes = recv(new_fd, buf, MAXDATASIZE, 0)) > 0) {
-        int writebytes=0;
+        int writebytes = 0;
+
         if (firstrecv == 0) {
-          length=0;
-          keyworditer=0;
-          printf("GODGODGOD\n");
+          length = 0;
+          keyworditer = 0;
           op = (unsigned short)buf[1];
           checksum = (unsigned short)buf[2] * (unsigned short)(256) +
                      (unsigned short)buf[3];
@@ -114,29 +133,35 @@ int main(int argc, char *argv[]) {
                    (unsigned long long)buf[i],
                    (unsigned long long)(pow(16.0, (double)(15 - i))));
           }
-          comparelength=length;
-        }
 
-        // for (int j=0; j<4; j++) {
-        //     keyword[j] += keyword[j]-'a';
-        // }
+          while(numbytes<length) {
+            numbytes+=recv(new_fd, buf+numbytes, MAXDATASIZE, 0);
+
+          }
+
+
+          comparelength = length;
+          myheader->op = op;
+          strncpy(myheader->arrKeyword, buf + 4, 4);
+          myheader->length = length;
+          printf("%d op | %02x checksum | %s keyword | %d numbytes | %llu length | %p addr\n",op, checksum, keyword, numbytes, length, buf);
+          if (op > 1 || op < 0 || comparelength > MAXPACKETSIZE ||
+              checkInvalidKeyword(keyword) ||
+              checkInvalidChecksum(myheader, buf, checksum, length)) {
+            close(new_fd);
+            free(myheader);
+            exit(0);
+          }
+        }
 
         unsigned char *data =
             (unsigned char *)calloc(sizeof(unsigned char) * (numbytes), 1);
-        // for (int m = 16 - 16 * firstrecv; m < numbytes; m++) {
-        //   buf[m] = tolower(buf[m]);
-        // }
-        
-        
-        // shiftKeyword(keyword,keyword_temp,writebytes);
         int tempchar;
-        printf("%d op | %02x checksum | %s keyword | %d numbytes | %llu length "
-               "| %p addr\n",
-               op, checksum, keyword, numbytes, length, data);
+        printf("%d op | %02x checksum | %s keyword | %d numbytes | %llu length | %p addr\n",op, checksum, keyword, numbytes, length, data);
         int k;
         for (k = 16 - 16 * firstrecv; k < numbytes; k++) {
           unsigned char tempchar = tolower(buf[k]);
-          // printf("%c in %d | %c\n", tempchar, k, buf[k]);
+          printf("%c in %d | %c\n", tempchar, k, buf[k]);
           if (tempchar >= 'a' && tempchar <= 'z') {
             if (op == 0) {
               if (tempchar + keyword[keyworditer % 4] - 'a' > 'z')
@@ -155,42 +180,35 @@ int main(int argc, char *argv[]) {
             data[k] = tempchar;
           }
         }
-        printf("GOD2\n");
+
         int t;
         for (t = 16 * firstrecv; t < 16; t++) {
           data[t] = buf[t];
         }
-        printf("GOD3\n");
+
         data[numbytes] = '\0';
-        // for (int z = 0; z < numbytes; z++) {
-        //   printf("%02x ", data[z]);
-        //   if (z % 4 == 3)
-        //     printf("| ");
-        // }
-        // printf("\n\n\n\n\n");
-        printf("%d =new_fd | data = %p | %d = numbytes\n", new_fd, data,
-               numbytes);
-        int sentbytes;
-        if ((sentbytes = send(new_fd, data, numbytes, 0)) == -1)
-          perror("send");
-        printf("SEND! %d \n", sentbytes);
-        comparelength-=numbytes;
-        if(comparelength==0)
-          firstrecv=0;
-        else
-          firstrecv = 1;
-        // free(data);
-        memset(buf,0,sizeof(unsigned char) * MAXDATASIZE);
-        writebytes+=numbytes%4;
+
+        printf("%d =new_fd | data = %p | %d = numbytes\n", new_fd, data,numbytes);
+               int sentbytes;
+               if ((sentbytes = send(new_fd, data, numbytes, 0)) == -1)
+                 perror("send");
+               printf("SEND! %d \n", sentbytes);
+               comparelength -= numbytes;
+               if (comparelength == 0)
+                 firstrecv = 0;
+               else
+                 firstrecv = 1;
+               // free(data);
+               memset(buf, 0, sizeof(unsigned char) * MAXDATASIZE);
+               
       }
       close(new_fd);
+      free(myheader);
 
       // free(port);
       exit(0);
     }
     close(new_fd); // parent doesn't need this
-
-    
   }
   free(port);
 
@@ -204,5 +222,68 @@ void shiftKeyword(char *keyword, char *keyword_temp, int readbytes) {
   int shift = readbytes % KEYWORDSIZE, i;
   for (i = 0; i < KEYWORDSIZE; i++) {
     keyword[(i + shift) % KEYWORDSIZE] = keyword_temp[i];
+  }
+}
+
+bool checkInvalidKeyword(unsigned char *keyword) {
+  int i;
+  for (i = 0; i < KEYWORDSIZE; i++) {
+    if (keyword[i] < 'a' || keyword[i] > 'z')
+      return true;
+  }
+  return false;
+}
+
+void getChecksum(struct header *myheader, unsigned char *data,
+                 unsigned long long length) {
+  unsigned short checksum = 0;
+  int c, datalength = length - 1;
+  unsigned char *dataptr, *endpoint = &data[datalength];
+  unsigned long long lengthtemp = myheader->length;
+
+  /// Checksum is one's complement of sum of op, keyword, length and data.
+  checksum = addShorts(checksum, myheader->op);
+  checksum = addShorts(checksum, (unsigned short)(myheader->arrKeyword[0]) *
+                                         (unsigned short)(MAXONEBYTE) +
+                                     (unsigned short)(myheader->arrKeyword[1]));
+  checksum = addShorts(checksum, (unsigned short)(myheader->arrKeyword[2]) *
+                                         (unsigned short)(MAXONEBYTE) +
+                                     (unsigned short)(myheader->arrKeyword[3]));
+  /// To reduce the time to run, use the pointer instead of directly accessing
+  /// the index.
+  dataptr = data + 16;
+  for (dataptr = &data[16]; dataptr < endpoint; dataptr += 2) {
+    checksum = addShorts(checksum, (unsigned short)(*dataptr) *
+                                           (unsigned short)(MAXONEBYTE) +
+                                       (unsigned short)(*(dataptr + 1)));
+  }
+  if (length % 2 == 1)
+    checksum = addShorts(checksum, (unsigned short)(MAXONEBYTE) *
+                                       (unsigned short)(data[length - 1]));
+  /// Length is composed of 64 bits.
+  while (lengthtemp > 0) {
+    checksum = addShorts(checksum, (unsigned short)(lengthtemp % MAXTWOBYTES));
+    lengthtemp >>= 16;
+  }
+  checksum = ~checksum;
+  myheader->checksum = checksum;
+}
+
+bool checkInvalidChecksum(struct header *myheader, unsigned char *data,
+                          unsigned short givenChecksum,
+                          unsigned long long length) {
+  getChecksum(myheader, data, length);
+  printf("GIVEN %02x | CORRECT %02x\n",givenChecksum,myheader->checksum);
+
+  return myheader->checksum != givenChecksum;
+}
+
+unsigned short addShorts(unsigned short a, unsigned short b) {
+  if (a + b >= MAXTWOBYTES) {
+    printf("%02x + %02x -> %02x\n",a,b,a + b - MAXTWOBYTES + 1);
+    return a + b - MAXTWOBYTES + 1; /// To cope with overflow.
+  } else {
+printf("%02x + %02x -> %02x\n",a,b,a + b);
+    return a + b;
   }
 }

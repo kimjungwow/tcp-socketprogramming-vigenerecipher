@@ -7,3 +7,5 @@ testvectors/test*
 test*
 *test
 README.md
+*.sh
+*test*
