@@ -90,11 +90,13 @@ int main(int argc, char *argv[]) {
       unsigned short op, checksum;
       unsigned char keyword[5];
       unsigned char keyword_temp[5];
-      unsigned long long length = 0;
-      int keyworditer = 0;
+      unsigned long long length = 0, comparelength=0;
+      int keyworditer;
       while ((numbytes = recv(new_fd, buf, MAXDATASIZE, 0)) > 0) {
         int writebytes=0;
         if (firstrecv == 0) {
+          length=0;
+          keyworditer=0;
           printf("GODGODGOD\n");
           op = (unsigned short)buf[1];
           checksum = (unsigned short)buf[2] * (unsigned short)(256) +
@@ -112,6 +114,7 @@ int main(int argc, char *argv[]) {
                    (unsigned long long)buf[i],
                    (unsigned long long)(pow(16.0, (double)(15 - i))));
           }
+          comparelength=length;
         }
 
         // for (int j=0; j<4; j++) {
@@ -123,7 +126,9 @@ int main(int argc, char *argv[]) {
         // for (int m = 16 - 16 * firstrecv; m < numbytes; m++) {
         //   buf[m] = tolower(buf[m]);
         // }
-        shiftKeyword(keyword,keyword_temp,writebytes);
+        
+        
+        // shiftKeyword(keyword,keyword_temp,writebytes);
         int tempchar;
         printf("%d op | %02x checksum | %s keyword | %d numbytes | %llu length "
                "| %p addr\n",
@@ -169,7 +174,11 @@ int main(int argc, char *argv[]) {
         if ((sentbytes = send(new_fd, data, numbytes, 0)) == -1)
           perror("send");
         printf("SEND! %d \n", sentbytes);
-        firstrecv = 1;
+        comparelength-=numbytes;
+        if(comparelength==0)
+          firstrecv=0;
+        else
+          firstrecv = 1;
         // free(data);
         memset(buf,0,sizeof(unsigned char) * MAXDATASIZE);
         writebytes+=numbytes%4;

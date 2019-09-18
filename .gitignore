@@ -1,11 +1,9 @@
 *.o
 client
 server
-server(beej).c
-abcd
-*test
-aa
 love*
 *.txt
 testvectors/test*
 test*
+*test
+README.md

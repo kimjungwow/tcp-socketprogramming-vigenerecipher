@@ -37,3 +37,4 @@ void fillPacket(struct header *myheader, unsigned char *packet_to_send,
                      unsigned char *data);
 void shiftKeyword(char *keyword, char *keyword_temp, int readbytes);
 int receiveAndPrint(int socket_fd, int startindex);
+int countAlphabet(unsigned char *data);

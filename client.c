@@ -57,7 +57,9 @@ int main(int argc, char *argv[]) {
 
     /// Depending on number of characters read, the keyword can be changed.
     shiftKeyword(myheader->arrKeyword, myheader->arrKeyword_temp, sendbytes);
-    sendbytes += strlen(readStdin) % KEYWORDSIZE;
+    // sendbytes += strlen(readStdin) % KEYWORDSIZE;
+    int temp = countAlphabet(readStdin);
+    sendbytes += temp % KEYWORDSIZE;
 
     /// 2. Calculate checksum, and put stdin and header into packet.
     unsigned char *packetToSend = (unsigned char *)calloc(
@@ -79,6 +81,7 @@ int main(int argc, char *argv[]) {
       readbytes -= receiveAndPrint(socket_fd, startindex);
       startindex = 0;
     }
+    // printf("\n\nKeyword : %c%c%c%c | strlen %d | alphabet %d | sendbytes %d\n\n",myheader->arrKeyword[0],myheader->arrKeyword[1],myheader->arrKeyword[2],myheader->arrKeyword[3],strlen(readStdin),temp,sendbytes);
 
     /// Clear buffer for using in the next iteration.
     memset(readStdin, 0, MAXDATASIZE * sizeof(unsigned char));
@@ -185,4 +188,16 @@ int receiveAndPrint(int socket_fd, int startindex) {
     printf("%c", buf[y]);
   free(buf);
   return numbytes;
+}
+
+int countAlphabet(unsigned char *data) {
+  int count=0, datalength = strlen(data) - 1;
+  unsigned char *dataptr, *endpoint = &data[datalength];
+  /// To reduce the time to run, use the pointer instead of directly accessing the index.
+  for (dataptr = data; dataptr < endpoint; dataptr++) {
+    if((*dataptr>='A'&&*dataptr<='Z')||(*dataptr>='a'&&*dataptr<='z'))
+      count++;
+  }
+  return count;
+
 }
