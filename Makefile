@@ -1,4 +1,4 @@
-all: client server
+all: client server server_select
 
 client: client.o
 	gcc -o client client.o -lm
@@ -10,5 +10,10 @@ server: server.o
 server.o: server.c
 	gcc -c -o server.o server.c
 
+server_select: server_select.o
+	gcc -o server_select server_select.o -lm
+server_select.o: server_select.c
+	gcc -c -o server_select.o server_select.c
+
 clean:
-	-rm *.o client server test
+	-rm *.o client server server_select

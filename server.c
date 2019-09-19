@@ -1,60 +1,14 @@
-#include <arpa/inet.h>
-#include <ctype.h>
-#include <errno.h>
-#include <math.h>
-#include <netdb.h>
-#include <netinet/in.h>
-#include <signal.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <unistd.h>
-#include <stdbool.h>
-
-#define HEADERSIZE 16 /// Length of header is always 16bytes.
-#define MAXPACKETSIZE 10000000
-#define MAXDATASIZE MAXPACKETSIZE - HEADERSIZE + 1
-#define MAXONEBYTE 256
-#define MAXTWOBYTES 65536
-#define KEYWORDSIZE 4
-#define BACKLOG 20
-struct header {
-  unsigned short op;
-  unsigned short checksum;
-  unsigned short checksum_temp;
-  char arrKeyword[KEYWORDSIZE];      /// Keyword is always 4 characters.
-  char arrKeyword_temp[KEYWORDSIZE]; /// The order of letters can be different
-                                     /// per packet.
-  unsigned long long length;
-  uint32_t nworder_length;
-};
-void shiftKeyword(char *keyword, char *keyword_temp, int readbytes);
-bool checkInvalidKeyword(unsigned char *keyword);
-void getChecksum(struct header *myheader, unsigned char *data,
-                 unsigned long long length);
-bool checkInvalidChecksum(struct header *myheader, unsigned char *data,
-                          unsigned short givenChecksum,
-                          unsigned long long length);
-unsigned short addShorts(unsigned short a, unsigned short b);
-void sigchld_handler(int sig) {
-  int olderrno = errno;
-  while (waitpid(-1, NULL, WNOHANG) > 0)
-    errno = olderrno;
-}
+#include "server.h"
 
 int main(int argc, char *argv[]) {
-  struct addrinfo hints, *res, *p;
-  int status, socket_fd, new_fd, numbytes;
-  char ipstr[INET6_ADDRSTRLEN], *port;
+  struct addrinfo hints, *res;
+  int status, listener, new_fd, numOfBytesRecv, a;
+  char *port;
   struct sockaddr_storage client_addr;
   socklen_t addr_size;
   struct sigaction sa;
 
   /// Read arguments
-  int a;
   for (a = 1; a < argc; a++) {
     if (!strcmp(argv[a], "-p")) {
       port = (char *)malloc(sizeof(char) * strlen(argv[a + 1]));
@@ -62,27 +16,31 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  memset(&hints, 0, sizeof hints); // Clear before using hints
-  hints.ai_family = AF_INET;       // Force version IPv4
-  hints.ai_socktype = SOCK_STREAM; // Use TCP Socket
-  hints.ai_flags = AI_PASSIVE;     // fill in my IP for me
-
+  /// Get address information of the server, machine running this code.
+  memset(&hints, 0, sizeof hints); /// Clear before using hints
+  hints.ai_family = AF_INET;       /// Force version IPv4
+  hints.ai_socktype = SOCK_STREAM; /// Use TCP Socket
+  hints.ai_flags = AI_PASSIVE;     /// fill in my IP for me
   if ((status = getaddrinfo(NULL, port, &hints, &res)) != 0) {
-    fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(status));
-    return 2;
+    perror("getaddrinfo");
+    return -1;
   }
 
-  socket_fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+  /// Get socket, bind it to port and listen for upcoming clients.
+  listener = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
   int yes = 1;
-  // lose the pesky "Address already in use" error message
-  if (setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof yes) == -1) {
+  /// If a socket that was connected is still hanging around the kernel,
+  /// allowing it to reuse the port.
+  if (setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof yes) == -1) {
     perror("setsockopt");
     exit(1);
   }
+  bind(listener, res->ai_addr, res->ai_addrlen);
+  listen(listener, BACKLOG);
 
-  bind(socket_fd, res->ai_addr, res->ai_addrlen);
-  listen(socket_fd, BACKLOG);
-  sa.sa_handler = sigchld_handler; // reap all dead processes
+  /// "server.c" uses multiple thread with fork(), so we must reap dead
+  /// processes.
+  sa.sa_handler = sigchld_handler;
   sigemptyset(&sa.sa_mask);
   sa.sa_flags = SA_RESTART;
   if (sigaction(SIGCHLD, &sa, NULL) == -1) {
@@ -90,145 +48,129 @@ int main(int argc, char *argv[]) {
     exit(1);
   }
 
+  /// In infinite loop, parent process is continuously listening for upcoming
+  /// clients.
+  /// When a client comes, parent process make child process with fork(),
+  /// to deal with that client.
   for (;;) {
     addr_size = sizeof client_addr;
-    new_fd = accept(socket_fd, (struct sockaddr *)&client_addr, &addr_size);
+    new_fd = accept(listener, (struct sockaddr *)&client_addr,
+                    &addr_size); /// The client is arriving.
 
-    if (!fork()) {      // this is the child process
-      close(socket_fd); // child doesn't need the listener
+    if (!fork()) {
+      close(listener); // Child process doesn't need the listener
       unsigned char *buf =
           (unsigned char *)calloc(sizeof(unsigned char) * MAXDATASIZE, 1);
+
+      /// Struct "header" for easily saving arguments.
       struct header *myheader =
           (struct header *)calloc(sizeof(struct header), 1);
 
-      // if ((numbytes = recv(new_fd, buf, MAXDATASIZE - 1, 0)) == -1) {
-      //   perror("recv");
-      //   exit(1);
-      // }
       int firstrecv = 0;
-      unsigned short op, checksum;
-      unsigned char keyword[5];
-      unsigned char keyword_temp[5];
-      unsigned long long length = 0, comparelength = 0;
-      int keyworditer;
-      while ((numbytes = recv(new_fd, buf, MAXDATASIZE, 0)) > 0) {
-        int writebytes = 0;
+      unsigned short checksum;
+      unsigned long long length = 0, givenLength = 0;
+      int numOfAlphabetRead;
+      /// 1. Read message from client
+      while ((numOfBytesRecv = recv(new_fd, buf, MAXDATASIZE, 0)) > 0) {
 
+        /// Read op, checksum, keyword, length from packet.
         if (firstrecv == 0) {
-          length = 0;
-          keyworditer = 0;
-          op = (unsigned short)buf[1];
-          checksum = (unsigned short)buf[2] * (unsigned short)(256) +
+          myheader->length = 0;
+          numOfAlphabetRead = 0;
+          myheader->op = (unsigned short)buf[1];
+          checksum = (unsigned short)buf[2] * (unsigned short)(MAXONEBYTE) +
                      (unsigned short)buf[3];
-          strncpy(keyword, buf + 4, 4);
-          keyword[4] = '\0';
-          strncpy(keyword_temp, buf + 4, 4);
-          keyword_temp[4] = '\0';
+          strncpy(myheader->arrKeyword, buf + KEYWORDSIZE, KEYWORDSIZE);
           int i;
-
           for (i = 15; i >= 8; i--) {
-            length += (unsigned long long)buf[i] *
-                      (unsigned long long)(pow(256.0, (double)(15 - i)));
-            printf("%llu NOW %d BECAUSE %llu * %llu\n", length, i,
-                   (unsigned long long)buf[i],
-                   (unsigned long long)(pow(16.0, (double)(15 - i))));
+            myheader->length +=
+                (unsigned long long)buf[i] *
+                (unsigned long long)(pow(256.0, (double)(15 - i)));
           }
-
-          while(numbytes<length) {
-            numbytes+=recv(new_fd, buf+numbytes, MAXDATASIZE, 0);
-
+          /// Read as much as the client sent.
+          givenLength = myheader->length;
+          while (numOfBytesRecv < givenLength) {
+            numOfBytesRecv += recv(new_fd, buf + numOfBytesRecv, MAXDATASIZE, 0);
           }
-
-
-          comparelength = length;
-          myheader->op = op;
-          strncpy(myheader->arrKeyword, buf + 4, 4);
-          myheader->length = length;
-          printf("%d op | %02x checksum | %s keyword | %d numbytes | %llu length | %p addr\n",op, checksum, keyword, numbytes, length, buf);
-          if (op > 1 || op < 0 || comparelength > MAXPACKETSIZE ||
-              checkInvalidKeyword(keyword) ||
-              checkInvalidChecksum(myheader, buf, checksum, length)) {
+          
+          /// If protocol is invalid, close the socket.
+          if (checkInvalidProtocol(myheader, buf, checksum)) {
             close(new_fd);
             free(myheader);
             exit(0);
           }
         }
 
+        /// 2. Put header and lowercased and encrypted(decrypted) alphabets into packet.
         unsigned char *data =
-            (unsigned char *)calloc(sizeof(unsigned char) * (numbytes), 1);
-        int tempchar;
-        printf("%d op | %02x checksum | %s keyword | %d numbytes | %llu length | %p addr\n",op, checksum, keyword, numbytes, length, data);
-        int k;
-        for (k = 16 - 16 * firstrecv; k < numbytes; k++) {
+            (unsigned char *)calloc(sizeof(unsigned char) * (numOfBytesRecv), 1);
+        int k, t;
+        for (k = HEADERSIZE - HEADERSIZE * firstrecv; k < numOfBytesRecv; k++) {
           unsigned char tempchar = tolower(buf[k]);
-          printf("%c in %d | %c\n", tempchar, k, buf[k]);
           if (tempchar >= 'a' && tempchar <= 'z') {
-            if (op == 0) {
-              if (tempchar + keyword[keyworditer % 4] - 'a' > 'z')
-                data[k] = tempchar + keyword[keyworditer % 4] - 26 - 'a';
+            if (myheader->op == 0) {
+              if (tempchar + myheader->arrKeyword[numOfAlphabetRead % KEYWORDSIZE] - 'a' > 'z')
+                data[k] =
+                    tempchar + myheader->arrKeyword[numOfAlphabetRead % KEYWORDSIZE] - NUMOFALPHABETS - 'a';
               else
-                data[k] = tempchar + keyword[keyworditer % 4] - 'a';
+                data[k] =
+                    tempchar + myheader->arrKeyword[numOfAlphabetRead % KEYWORDSIZE] - 'a';
             } else {
-              if (tempchar - (keyword[keyworditer % 4] - 'a') < 'a')
-                data[k] = tempchar - (keyword[keyworditer % 4] - 'a') + 26;
+              if (tempchar - (myheader->arrKeyword[numOfAlphabetRead % KEYWORDSIZE] - 'a') <
+                  'a')
+                data[k] = tempchar -
+                          (myheader->arrKeyword[numOfAlphabetRead % KEYWORDSIZE] - 'a') + NUMOFALPHABETS;
               else
-                data[k] = tempchar - (keyword[keyworditer % 4] - 'a');
+                data[k] =
+                    tempchar - (myheader->arrKeyword[numOfAlphabetRead % KEYWORDSIZE] - 'a');
             }
-            keyworditer++;
-
+            numOfAlphabetRead++;
           } else {
             data[k] = tempchar;
           }
         }
-
-        int t;
-        for (t = 16 * firstrecv; t < 16; t++) {
+        for (t = HEADERSIZE * firstrecv; t < HEADERSIZE; t++) {
           data[t] = buf[t];
         }
+        data[numOfBytesRecv] = '\0';
 
-        data[numbytes] = '\0';
+        /// 3. Send packet to client
+        int sentbytes;
+        if ((sentbytes = send(new_fd, data, numOfBytesRecv, 0)) == -1)
+          perror("send");
+        givenLength -= numOfBytesRecv;
+        if (givenLength == 0)
+          firstrecv = 0;
+        else
+          firstrecv = 1;
 
-        printf("%d =new_fd | data = %p | %d = numbytes\n", new_fd, data,numbytes);
-               int sentbytes;
-               if ((sentbytes = send(new_fd, data, numbytes, 0)) == -1)
-                 perror("send");
-               printf("SEND! %d \n", sentbytes);
-               comparelength -= numbytes;
-               if (comparelength == 0)
-                 firstrecv = 0;
-               else
-                 firstrecv = 1;
-               // free(data);
-               memset(buf, 0, sizeof(unsigned char) * MAXDATASIZE);
-               
+        memset(buf, 0, sizeof(unsigned char) * MAXDATASIZE);
       }
       close(new_fd);
       free(myheader);
-
-      // free(port);
       exit(0);
     }
-    close(new_fd); // parent doesn't need this
+    close(new_fd); /// Parent process doesn't need this socket.
   }
-  free(port);
-
+  free(port); /// Not reached.
   return 0;
 }
 
-void shiftKeyword(char *keyword, char *keyword_temp, int readbytes) {
-  /// Depending on number of characters read, the keyword can be changed.
-  /// If I already sent 9999981 characters when the keyword is 'cake',
-  /// next keyword should be 'akec', not 'cake'.
-  int shift = readbytes % KEYWORDSIZE, i;
-  for (i = 0; i < KEYWORDSIZE; i++) {
-    keyword[(i + shift) % KEYWORDSIZE] = keyword_temp[i];
-  }
+/// Check whether op is valid.
+bool checkInvalidOp(struct header *myheader) {
+  return myheader->op > 1 || myheader->op < 0;
 }
 
+/// Check whether length is valid.
+bool checkInvalidLength(struct header *myheader) {
+  return myheader->length > MAXPACKETSIZE;
+}
+
+/// Check whether keyword is valid.
 bool checkInvalidKeyword(unsigned char *keyword) {
   int i;
   for (i = 0; i < KEYWORDSIZE; i++) {
-    if (keyword[i] < 'a' || keyword[i] > 'z')
+    if (!((keyword[i] >= 'a' && keyword[i] <= 'z') || (keyword[i] >= 'A' && keyword[i] <= 'Z')))
       return true;
   }
   return false;
@@ -237,7 +179,7 @@ bool checkInvalidKeyword(unsigned char *keyword) {
 void getChecksum(struct header *myheader, unsigned char *data,
                  unsigned long long length) {
   unsigned short checksum = 0;
-  int c, datalength = length - 1;
+  int datalength = length - 1;
   unsigned char *dataptr, *endpoint = &data[datalength];
   unsigned long long lengthtemp = myheader->length;
 
@@ -251,8 +193,8 @@ void getChecksum(struct header *myheader, unsigned char *data,
                                      (unsigned short)(myheader->arrKeyword[3]));
   /// To reduce the time to run, use the pointer instead of directly accessing
   /// the index.
-  dataptr = data + 16;
-  for (dataptr = &data[16]; dataptr < endpoint; dataptr += 2) {
+  dataptr = data + HEADERSIZE;
+  for (dataptr = &data[HEADERSIZE]; dataptr < endpoint; dataptr += 2) {
     checksum = addShorts(checksum, (unsigned short)(*dataptr) *
                                            (unsigned short)(MAXONEBYTE) +
                                        (unsigned short)(*(dataptr + 1)));
@@ -263,7 +205,7 @@ void getChecksum(struct header *myheader, unsigned char *data,
   /// Length is composed of 64 bits.
   while (lengthtemp > 0) {
     checksum = addShorts(checksum, (unsigned short)(lengthtemp % MAXTWOBYTES));
-    lengthtemp >>= 16;
+    lengthtemp >>= HEADERSIZE;
   }
   checksum = ~checksum;
   myheader->checksum = checksum;
@@ -273,17 +215,31 @@ bool checkInvalidChecksum(struct header *myheader, unsigned char *data,
                           unsigned short givenChecksum,
                           unsigned long long length) {
   getChecksum(myheader, data, length);
-  printf("GIVEN %02x | CORRECT %02x\n",givenChecksum,myheader->checksum);
+  // printf("GIVEN %02x | CORRECT %02x\n", givenChecksum, myheader->checksum);
 
   return myheader->checksum != givenChecksum;
 }
 
 unsigned short addShorts(unsigned short a, unsigned short b) {
   if (a + b >= MAXTWOBYTES) {
-    printf("%02x + %02x -> %02x\n",a,b,a + b - MAXTWOBYTES + 1);
+    // printf("%02x + %02x -> %02x\n", a, b, a + b - MAXTWOBYTES + 1);
     return a + b - MAXTWOBYTES + 1; /// To cope with overflow.
   } else {
-printf("%02x + %02x -> %02x\n",a,b,a + b);
+    // printf("%02x + %02x -> %02x\n", a, b, a + b);
     return a + b;
   }
+}
+
+bool checkInvalidProtocol(struct header *myheader, unsigned char *data,
+                          unsigned short givenChecksum) {
+  return (
+      checkInvalidOp(myheader) || checkInvalidLength(myheader) ||
+      checkInvalidKeyword(myheader->arrKeyword) ||
+      checkInvalidChecksum(myheader, data, givenChecksum, myheader->length));
+}
+
+void sigchld_handler(int sig) {
+  int olderrno = errno;
+  while (waitpid(-1, NULL, WNOHANG) > 0)
+    errno = olderrno;
 }

@@ -24,9 +24,9 @@ int main(int argc, char *argv[]) {
   }
 
   /// Get address information of client, machine running this code.
-  memset(&hints, 0, sizeof hints);
-  hints.ai_family = AF_INET;
-  hints.ai_socktype = SOCK_STREAM;
+  memset(&hints, 0, sizeof hints); /// Clear before using hints
+  hints.ai_family = AF_INET; /// Force version IPv4
+  hints.ai_socktype = SOCK_STREAM; /// Use TCP Socket
   if (getaddrinfo(host, port, &hints, &servinfo) != 0) {
     perror("getaddrinfo");
     return -1;
@@ -82,9 +82,6 @@ int main(int argc, char *argv[]) {
       readbytes -= receiveAndPrint(socket_fd, startindex);
       startindex = 0;
     }
-    // printf("\n\nKeyword : %c%c%c%c | strlen %d | alphabet %d | sendbytes %d\n\n",
-    // myheader->arrKeyword[0],myheader->arrKeyword[1],myheader->arrKeyword[2],myheader->arrKeyword[3],
-    // strlen(readStdin),temp,sendbytes);
 
     /// Clear buffer for using in the next iteration.
     memset(readStdin, 0, MAXDATASIZE * sizeof(unsigned char));
@@ -104,10 +101,8 @@ int main(int argc, char *argv[]) {
 
 unsigned short addShorts(unsigned short a, unsigned short b) {
   if (a + b >= MAXTWOBYTES) {
-    // printf("%02x + %02x -> %02x\n",a,b,a+b-MAXTWOBYTES+1);
     return a + b - MAXTWOBYTES + 1; /// To cope with overflow.
   } else {
-    // printf("%02x + %02x -> %02x\n",a,b,a+b);
     return a + b;
   }
 }
@@ -148,7 +143,6 @@ void getChecksum(struct header *myheader, unsigned char *data) {
 
 void fillPacket(struct header *myheader, unsigned char *packetToSend,
                 unsigned char *data) {
-
 
   myheader->checksum = htons(myheader->checksum);
   myheader->length = htobe64(myheader->length);
