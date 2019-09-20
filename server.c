@@ -49,8 +49,7 @@ int main(int argc, char *argv[]) {
   }
 
   /// In infinite loop, parent process is continuously listening for upcoming
-  /// clients.
-  /// When a client comes, parent process make child process with fork(),
+  /// clients. When a client comes, parent process make child process with fork(),
   /// to deal with that client.
   for (;;) {
     addr_size = sizeof client_addr;
@@ -211,21 +210,18 @@ void getChecksum(struct header *myheader, unsigned char *data,
   myheader->checksum = checksum;
 }
 
+/// Check whether checksum is valid by calculating checksum again.
 bool checkInvalidChecksum(struct header *myheader, unsigned char *data,
                           unsigned short givenChecksum,
                           unsigned long long length) {
   getChecksum(myheader, data, length);
-  // printf("GIVEN %02x | CORRECT %02x\n", givenChecksum, myheader->checksum);
-
   return myheader->checksum != givenChecksum;
 }
 
 unsigned short addShorts(unsigned short a, unsigned short b) {
   if (a + b >= MAXTWOBYTES) {
-    // printf("%02x + %02x -> %02x\n", a, b, a + b - MAXTWOBYTES + 1);
     return a + b - MAXTWOBYTES + 1; /// To cope with overflow.
   } else {
-    // printf("%02x + %02x -> %02x\n", a, b, a + b);
     return a + b;
   }
 }

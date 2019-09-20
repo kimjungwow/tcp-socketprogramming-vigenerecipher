@@ -23,7 +23,7 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  /// Get address information of client, machine running this code.
+  /// Get address information of the client, machine running this code.
   memset(&hints, 0, sizeof hints); /// Clear before using hints
   hints.ai_family = AF_INET; /// Force version IPv4
   hints.ai_socktype = SOCK_STREAM; /// Use TCP Socket

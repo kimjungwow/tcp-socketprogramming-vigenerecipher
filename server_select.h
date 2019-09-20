@@ -21,6 +21,7 @@
 #define MAXTWOBYTES 65536
 #define KEYWORDSIZE 4
 #define BACKLOG 20
+#define NUMOFALPHABETS 26
 struct header {
   unsigned short op;
   unsigned short checksum;
@@ -31,7 +32,8 @@ struct header {
   unsigned long long length;
   uint32_t nworder_length;
 };
-void shiftKeyword(char *keyword, char *keyword_temp, int readbytes);
+bool checkInvalidOp(struct header *myheader);
+bool checkInvalidLength(struct header *myheader);
 bool checkInvalidKeyword(unsigned char *keyword);
 void getChecksum(struct header *myheader, unsigned char *data,
                  unsigned long long length);
@@ -39,3 +41,5 @@ bool checkInvalidChecksum(struct header *myheader, unsigned char *data,
                           unsigned short givenChecksum,
                           unsigned long long length);
 unsigned short addShorts(unsigned short a, unsigned short b);
+bool checkInvalidProtocol(struct header *myheader, unsigned char *data,
+                          unsigned short givenChecksum);
