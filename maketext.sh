@@ -1,1 +1,0 @@
-tr -dc A-Za-z0-9 </dev/urandom | head -c $1 > test$2.txt

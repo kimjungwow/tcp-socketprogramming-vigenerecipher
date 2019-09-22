@@ -1,1 +1,0 @@
-./client -h 143.248.53.25 -p 7878 -o 0 -k abcd < testvectors/burrito.txt > btest

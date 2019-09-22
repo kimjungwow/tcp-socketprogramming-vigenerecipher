@@ -1,11 +1,12 @@
+# Object files
 *.o
+# Binary files
 client
 server
-love*
+server_select
+# Outputs
 *.txt
+# Testcases
 testvectors/test*
-test*
-*test
-README.md
+# Shell Scripts
 *.sh
-*test*
