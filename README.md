@@ -23,15 +23,15 @@
   `./client -h 127.0.0.1 -p 7878 -o 0 -k abcd < test.txt > a.txt`  
   `./client -h 127.0.0.1 -p 7878 -o 1 -k abcd < a.txt > b.txt`  
   `diff -i test.txt b.txt`
-## Run multiple clients
-#### Make shell scripts like below and execute 
+#### Run multiple clients
+##### Make shell scripts like below and execute 
   ```  
   for i in {1..20} ;  
 do  
     ./client -h 127.0.0.1 -p 7878 -o 0 -k abcd < test.txt > a$i.txt &  
 done  
 ```  
-#### Others
+## Others
 - I studied socket programming through this link.  
 So I wrote code related to socket programming such as send() or getaddrinfo() referring to this link.  
 https://beej.us/guide/bgnet/html/single/bgnet.html  
