@@ -1,4 +1,4 @@
-# Socket Programming  
+# TCP Socket Programming (Vigenère cipher)  
 - Implement a connection-oriented, client-server protocol based on a given specification (TCP sockets)  
 - Send/receive data via socket  
 - Implement a string encryption/decryption service : [Vigenère cipher](https://en.wikipedia.org/wiki/Vigen%C3%A8re_cipher)  
