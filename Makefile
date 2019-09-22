@@ -16,4 +16,4 @@ server_select.o: server_select.c
 	gcc -c -o server_select.o server_select.c
 
 clean:
-	-rm *.o client server server_select
+	-rm *.o client server server_select 
