@@ -10,3 +10,5 @@ server_select
 testvectors/test*
 # Shell Scripts
 *.sh
+# clang-format config
+.clang-format
