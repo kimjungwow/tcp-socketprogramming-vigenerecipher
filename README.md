@@ -35,3 +35,4 @@ done
 - I studied socket programming through this link.  
 So I wrote code related to socket programming such as send() or getaddrinfo() referring to this link.  
 https://beej.us/guide/bgnet/html/single/bgnet.html  
+- Testcases in `testvectors` directory are encrypted with keyword `abcd`
